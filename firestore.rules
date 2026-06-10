@@ -1,0 +1,167 @@
+// firestore.rules
+// Deploy with: firebase deploy --only firestore:rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── HELPER FUNCTIONS ────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'admin';
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && getUserData().role == 'teacher';
+    }
+
+    function belongsToSchool(schoolId) {
+      return isAuthenticated() && getUserData().schoolId == schoolId;
+    }
+
+    function isAdminOfSchool(schoolId) {
+      return isAdmin() && belongsToSchool(schoolId);
+    }
+
+    function isTeacherOfSchool(schoolId) {
+      return isTeacher() && belongsToSchool(schoolId);
+    }
+
+    function isMemberOfSchool(schoolId) {
+      return isAdminOfSchool(schoolId) || isTeacherOfSchool(schoolId);
+    }
+
+    // ── SCHOOLS ─────────────────────────────────────────────────
+    match /schools/{schoolId} {
+      allow read: if isMemberOfSchool(schoolId);
+      allow create: if isAuthenticated();
+      allow update: if isAdminOfSchool(schoolId);
+      allow delete: if false; // Schools are never deleted via client
+    }
+
+    // ── USERS ────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Users can read their own profile; admins can read all users in their school
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        (isAdmin() && resource.data.schoolId == getUserData().schoolId)
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isAdminOfSchool(resource.data.schoolId)
+      );
+      allow delete: if isAdminOfSchool(resource.data.schoolId);
+    }
+
+    // ── STUDENTS ─────────────────────────────────────────────────
+    match /students/{studentId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if false; // Students are never deleted — only status changed
+    }
+
+    // ── ENROLLMENTS ───────────────────────────────────────────────
+    match /enrollments/{enrollmentId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if false; // Enrollment history must be preserved
+    }
+
+    // ── TEACHERS ─────────────────────────────────────────────────
+    match /teachers/{teacherId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if isAdminOfSchool(resource.data.schoolId);
+    }
+
+    // ── CLASSES ──────────────────────────────────────────────────
+    match /classes/{classId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if isAdminOfSchool(resource.data.schoolId);
+    }
+
+    // ── SUBJECTS ─────────────────────────────────────────────────
+    match /subjects/{subjectId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if isAdminOfSchool(resource.data.schoolId);
+    }
+
+    // ── SCORES ───────────────────────────────────────────────────
+    // Teachers can enter scores for their assigned subjects/classes only
+    match /scores/{scoreId} {
+      allow read: if isMemberOfSchool(resource.data.schoolId);
+
+      allow create: if isMemberOfSchool(request.resource.data.schoolId) && (
+        isAdminOfSchool(request.resource.data.schoolId) ||
+        (
+          isTeacherOfSchool(request.resource.data.schoolId) &&
+          request.resource.data.subjectId in getUserData().assignedSubjects &&
+          request.resource.data.classId in getUserData().assignedClasses
+        )
+      );
+
+      allow update: if isMemberOfSchool(resource.data.schoolId) && (
+        isAdminOfSchool(resource.data.schoolId) ||
+        (
+          isTeacherOfSchool(resource.data.schoolId) &&
+          !resource.data.isFinalized // Teachers cannot edit finalized scores
+        )
+      );
+
+      allow delete: if isAdminOfSchool(resource.data.schoolId);
+    }
+
+    // ── RESULTS ──────────────────────────────────────────────────
+    match /results/{resultId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId) && !resource.data.isFinalized;
+      allow delete: if false; // Results are permanent records
+    }
+
+    // ── PROMOTIONS ───────────────────────────────────────────────
+    match /promotions/{promotionId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if false; // Promotion audit logs are immutable
+      allow delete: if false;
+    }
+
+    // ── ANALYTICS ────────────────────────────────────────────────
+    match /analytics/{snapshotId} {
+      allow read:   if isMemberOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if isAdminOfSchool(resource.data.schoolId);
+    }
+
+    // ── BACKUPS ───────────────────────────────────────────────────
+    match /backups/{backupId} {
+      allow read:   if isAdminOfSchool(resource.data.schoolId);
+      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── DEFAULT: DENY ALL ─────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

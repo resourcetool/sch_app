@@ -1,0 +1,54 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "classId",  "order": "ASCENDING" },
+        { "fieldPath": "academicYear", "order": "ASCENDING" },
+        { "fieldPath": "term",     "order": "ASCENDING" },
+        { "fieldPath": "status",   "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "scores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId",    "order": "ASCENDING" },
+        { "fieldPath": "classId",     "order": "ASCENDING" },
+        { "fieldPath": "academicYear","order": "ASCENDING" },
+        { "fieldPath": "term",        "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "results",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId",    "order": "ASCENDING" },
+        { "fieldPath": "classId",     "order": "ASCENDING" },
+        { "fieldPath": "academicYear","order": "ASCENDING" },
+        { "fieldPath": "term",        "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "students",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "status",   "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "analytics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId",    "order": "ASCENDING" },
+        { "fieldPath": "classId",     "order": "ASCENDING" },
+        { "fieldPath": "academicYear","order": "ASCENDING" },
+        { "fieldPath": "term",        "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
