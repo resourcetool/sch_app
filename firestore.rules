@@ -151,6 +151,27 @@ service cloud.firestore {
       allow delete: if isAdminOfSchool(resource.data.schoolId);
     }
 
+    // ── SUBSCRIPTIONS ─────────────────────────────────────────────
+    // Schools can read their own subscription
+    // Only super admin (server-side) can write — enforced via Admin SDK
+    // Client-side: schools can only read, never write their own subscription
+    match /subscriptions/{schoolId} {
+      allow read: if isAuthenticated() && getUserData().schoolId == schoolId;
+      allow write: if false; // Written only by super admin via Firebase Admin SDK / direct console
+    }
+
+    // ── REGISTRATION CODES ────────────────────────────────────────
+    match /registrationCodes/{codeId} {
+      allow read: if isAuthenticated(); // needed for validation during registration
+      allow write: if false; // Super admin only via Admin SDK
+    }
+
+    // ── ACCESS REQUESTS ───────────────────────────────────────────
+    match /accessRequests/{requestId} {
+      allow create: if true; // Anyone can submit a request (public form)
+      allow read, update, delete: if false; // Super admin only
+    }
+
     // ── BACKUPS ───────────────────────────────────────────────────
     match /backups/{backupId} {
       allow read:   if isAdminOfSchool(resource.data.schoolId);
