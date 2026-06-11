@@ -7,7 +7,7 @@ const DB_VERSION = 1;
 const STORES = [
   'students', 'enrollments', 'teachers', 'classes',
   'subjects', 'scores', 'results', 'promotions',
-  'analytics', 'syncQueue', 'backups'
+  'analytics', 'syncQueue', 'backups', 'subscriptions', 'users', 'schools'
 ];
 
 let dbInstance = null;
