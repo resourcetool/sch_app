@@ -68,9 +68,12 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={{ marginTop: 20, textAlign: 'center' }}>
+        <div style={{ marginTop: 20, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <a href="/register" style={{ color: 'var(--navy)', fontSize: '.84rem' }}>
-            Register your school →
+            Already have a code? Register →
+          </a>
+          <a href="/request-access" style={{ color: 'var(--text-lt)', fontSize: '.8rem' }}>
+            New school? Request access →
           </a>
         </div>
       </div>

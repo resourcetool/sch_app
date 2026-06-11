@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSchool } from '../contexts/SchoolContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import {
   createBackupPackage, exportAsJSON, exportAsExcel,
   exportStudentsAsExcel, previewRestore, executeRestore,
   getBackupSchedule, saveBackupSchedule, shouldRunBackup
 } from '../services/backupService';
 import { getDBStats } from '../services/indexedDB';
+import FeatureGate from '../components/common/FeatureGate';
 
 function StatRow({ label, value }) {
   return (
@@ -21,6 +23,8 @@ function StatRow({ label, value }) {
 export default function Backup() {
   const { schoolId, school } = useSchool();
   const { userProfile } = useAuth();
+  const { can } = useSubscription();
+  const backupUnlocked = can('backup');
   const [dbStats, setDbStats] = useState({});
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
@@ -140,13 +144,19 @@ export default function Backup() {
         <h1>Backup & Data Recovery</h1>
       </div>
 
-      <div className="tabs">
+      {!backupUnlocked && (
+        <div style={{ marginBottom: 24 }}>
+          <FeatureGate feature="backup" />
+        </div>
+      )}
+
+      {backupUnlocked && <div className="tabs">
         <button className={`tab${tab === 'backup' ? ' active' : ''}`} onClick={() => setTab('backup')}>Backup</button>
         <button className={`tab${tab === 'restore' ? ' active' : ''}`} onClick={() => setTab('restore')}>Restore</button>
         <button className={`tab${tab === 'export' ? ' active' : ''}`} onClick={() => setTab('export')}>Export</button>
         <button className={`tab${tab === 'schedule' ? ' active' : ''}`} onClick={() => setTab('schedule')}>Schedule</button>
         <button className={`tab${tab === 'log' ? ' active' : ''}`} onClick={() => setTab('log')}>Audit Log</button>
-      </div>
+      </div>}
 
       {/* ── BACKUP ── */}
       {tab === 'backup' && (
