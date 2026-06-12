@@ -7,6 +7,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { initialSync, setupConnectivityListeners } from '../services/syncService';
 import { idbGet, idbPut } from '../services/indexedDB';
+import { isSuperAdmin } from '../services/superAdminService';
 
 const AuthContext = createContext(null);
 
@@ -20,14 +21,34 @@ export function AuthProvider({ children }) {
 
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Try IDB first (offline)
+        // Super admin — no Firestore profile needed, synthesize one
+        if (isSuperAdmin(firebaseUser.email)) {
+          const saProfile = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            firstName: 'Super',
+            lastName: 'Admin',
+            role: 'superadmin',
+            schoolId: null
+          };
+          setUser(firebaseUser);
+          setUserProfile(saProfile);
+          setLoading(false);
+          return;
+        }
+
+        // Regular user — try IDB first (works offline)
         let profile = await idbGet('users', firebaseUser.uid);
 
         if (!profile && navigator.onLine) {
-          const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (snap.exists()) {
-            profile = { id: snap.id, ...snap.data() };
-            await idbPut('users', profile);
+          try {
+            const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (snap.exists()) {
+              profile = { id: snap.id, ...snap.data() };
+              await idbPut('users', profile);
+            }
+          } catch (err) {
+            console.warn('Could not fetch user profile:', err.message);
           }
         }
 
@@ -60,16 +81,15 @@ export function AuthProvider({ children }) {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const uid = cred.user.uid;
 
-    // Create school
     const schoolId = `school_${Date.now()}`;
     const school = {
       id: schoolId,
       name: schoolData.schoolName,
-      address: schoolData.address,
-      phone: schoolData.phone,
-      email: schoolData.email,
+      address: schoolData.address || '',
+      phone: schoolData.phone || '',
+      email: schoolData.email || '',
       code: schoolData.code || schoolData.schoolName.substring(0, 3).toUpperCase(),
-      gradingScale: null, // use default
+      gradingScale: null,
       promotionRules: null,
       academicYear: schoolData.academicYear || '2024/2025',
       currentTerm: schoolData.currentTerm || '1',
@@ -79,25 +99,39 @@ export function AuthProvider({ children }) {
     await setDoc(doc(db, 'schools', schoolId), school);
     await idbPut('schools', school);
 
-    const userProfile = {
+    const profile = {
       id: uid,
       schoolId,
       email,
-      firstName: schoolData.firstName,
-      lastName: schoolData.lastName,
+      firstName: schoolData.firstName || '',
+      lastName: schoolData.lastName || '',
       role: 'admin',
       createdAt: Date.now()
     };
 
-    await setDoc(doc(db, 'users', uid), userProfile);
-    await idbPut('users', userProfile);
+    await setDoc(doc(db, 'users', uid), profile);
+    await idbPut('users', profile);
 
-    return { user: cred.user, school, userProfile };
+    return { user: cred.user, school, userProfile: profile };
   }
 
   return (
     <AuthContext.Provider value={{ user, userProfile, loading, login, logout, registerAdmin }}>
-      {!loading && children}
+      {loading ? (
+        <div style={{
+          minHeight: '100vh', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', background: '#0f3460'
+        }}>
+          <div style={{ textAlign: 'center', color: '#fff' }}>
+            <div style={{
+              width: 40, height: 40, border: '3px solid rgba(255,255,255,.2)',
+              borderTopColor: '#fff', borderRadius: '50%',
+              animation: 'spin .7s linear infinite', margin: '0 auto 16px'
+            }} />
+            <div style={{ fontSize: '.9rem', opacity: .7 }}>Loading…</div>
+          </div>
+        </div>
+      ) : children}
     </AuthContext.Provider>
   );
 }
