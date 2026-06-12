@@ -389,7 +389,7 @@ export default function SuperAdmin() {
   // Guard — only super admin can see this
   useEffect(() => {
     if (userProfile && !isSuperAdmin(userProfile.email)) {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [userProfile, navigate]);
 
@@ -442,7 +442,7 @@ export default function SuperAdmin() {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           <button onClick={load} className="btn btn-ghost btn-sm" style={{ color: '#fff', borderColor: 'rgba(255,255,255,.2)' }}>↻ Refresh</button>
-          <button onClick={() => navigate('/')} className="btn btn-ghost btn-sm" style={{ color: '#fff', borderColor: 'rgba(255,255,255,.2)' }}>← Back to School</button>
+          <button onClick={() => navigate('/dashboard')} className="btn btn-ghost btn-sm" style={{ color: '#fff', borderColor: 'rgba(255,255,255,.2)' }}>← School View</button>
         </div>
       </div>
 
