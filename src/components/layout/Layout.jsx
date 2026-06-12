@@ -5,20 +5,18 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useSchool } from '../../contexts/SchoolContext';
 import { useSubscription } from '../../contexts/SubscriptionContext';
 import { onSyncStatusChange } from '../../services/syncService';
-import { isSuperAdmin } from '../../services/superAdminService';
-import SubscriptionBanner from '../common/SubscriptionBanner';
 
 const NAV = [
   { section: 'Overview' },
-  { to: '/',           icon: '📊', label: 'Dashboard'   },
+  { to: '/dashboard',  icon: '📊', label: 'Dashboard'  },
   { section: 'Academic' },
-  { to: '/students',   icon: '👥', label: 'Students'    },
-  { to: '/teachers',   icon: '👨‍🏫', label: 'Teachers'    },
-  { to: '/classes',    icon: '🏫', label: 'Classes'     },
-  { to: '/subjects',   icon: '📚', label: 'Subjects'    },
-  { to: '/scores',     icon: '✏️', label: 'Score Entry'  },
-  { section: 'Reports & Ops' },
-  { to: '/reports',    icon: '📄', label: 'Reports'     },
+  { to: '/students',   icon: '👥', label: 'Students'   },
+  { to: '/teachers',   icon: '👨‍🏫', label: 'Teachers'   },
+  { to: '/classes',    icon: '🏫', label: 'Classes'    },
+  { to: '/subjects',   icon: '📚', label: 'Subjects'   },
+  { to: '/scores',     icon: '✏️', label: 'Score Entry' },
+  { section: 'Results' },
+  { to: '/reports',    icon: '📄', label: 'Reports'    },
   { to: '/promotion',  icon: '🚀', label: 'Promotion',  adminOnly: true },
   { to: '/analytics',  icon: '📈', label: 'Analytics',  feature: 'analytics' },
   { section: 'Admin' },
@@ -32,12 +30,11 @@ export default function Layout() {
   const { plan, status, days, can } = useSubscription();
   const navigate = useNavigate();
   const [syncStatus, setSyncStatus] = useState(navigator.onLine ? 'synced' : 'offline');
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const unsub = onSyncStatusChange(setSyncStatus);
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => { unsub(); clearInterval(timer); };
+    return unsub;
   }, []);
 
   async function handleLogout() {
@@ -45,98 +42,138 @@ export default function Layout() {
     navigate('/login');
   }
 
-  const syncLabel = {
-    synced: '● Synced', syncing: '↻ Syncing...', offline: '⚠ Offline', error: '✕ Error', online: '↻ Online'
-  };
-
   const isAdmin = userProfile?.role === 'admin';
-  const isSA = isSuperAdmin(userProfile?.email);
+
+  const syncInfo = {
+    synced:  { label: '● Synced',    cls: 'synced'  },
+    syncing: { label: '↻ Syncing…',  cls: 'syncing' },
+    offline: { label: '⚠ Offline',  cls: 'offline' },
+    error:   { label: '✕ Error',     cls: 'offline' },
+    online:  { label: '↻ Syncing…',  cls: 'syncing' },
+  };
+  const sync = syncInfo[syncStatus] || syncInfo.synced;
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 99, display: 'none' }}
+          className="mobile-overlay"
+        />
+      )}
+
+      <aside className={`sidebar${mobileOpen ? ' open' : ''}`}>
+        {/* Logo */}
         <div className="sidebar-logo">
-          <h2>{school?.name || 'SchoolMS'}</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-            <span style={{ color: 'rgba(255,255,255,.45)', fontSize: '.72rem' }}>{school?.code} · {userProfile?.role}</span>
-            {plan && (
-              <span style={{
-                background: plan.id === 'premium' ? '#e94560' : plan.id === 'pro' ? '#2980b9' : '#8898aa',
-                color: '#fff', fontSize: '.62rem', fontWeight: 700,
-                padding: '1px 6px', borderRadius: 8
-              }}>{plan.badge}</span>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h2>{school?.name || 'SchoolMS'}</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                <span style={{ color: 'rgba(255,255,255,.45)', fontSize: '.72rem' }}>
+                  {school?.code || ''} · {userProfile?.role}
+                </span>
+                {plan && (
+                  <span style={{
+                    background: plan.id === 'premium' ? '#e94560' : plan.id === 'pro' ? '#2980b9' : '#64748b',
+                    color: '#fff', fontSize: '.6rem', fontWeight: 700,
+                    padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase'
+                  }}>{plan.name}</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setMobileOpen(false)}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.4)', fontSize: '1.2rem', cursor: 'pointer', display: 'none' }}
+              className="sidebar-close"
+            >✕</button>
           </div>
         </div>
 
-        <nav style={{ flex: 1, padding: '8px 0' }}>
+        {/* Nav */}
+        <nav style={{ flex: 1, padding: '6px 0', overflowY: 'auto' }}>
           {NAV.map((item, i) => {
             if (item.section) {
-              return <div key={i} className="sidebar-section"><span className="sidebar-section-label">{item.section}</span></div>;
+              return (
+                <div key={i} className="sidebar-section">
+                  <span className="sidebar-section-label">{item.section}</span>
+                </div>
+              );
             }
             if (item.adminOnly && !isAdmin) return null;
-
             const locked = item.feature && !can(item.feature);
 
             return (
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.to === '/'}
-                className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
-                style={locked ? { opacity: .5 } : {}}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}${locked ? ' locked' : ''}`}
               >
                 <span className="icon">{item.icon}</span>
-                {item.label}
-                {locked && <span style={{ marginLeft: 'auto', fontSize: '.65rem', opacity: .7 }}>⭐</span>}
+                <span>{item.label}</span>
+                {locked && <span style={{ marginLeft: 'auto', fontSize: '.65rem', opacity: .6 }}>⭐</span>}
               </NavLink>
             );
           })}
-
-          {/* Super Admin link */}
-          {isSA && (
-            <>
-              <div className="sidebar-section"><span className="sidebar-section-label">Super Admin</span></div>
-              <NavLink to="/superadmin" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
-                style={{ background: 'rgba(233,69,96,.15)' }}>
-                <span className="icon">⚡</span> Super Admin
-              </NavLink>
-            </>
-          )}
         </nav>
 
+        {/* Bottom */}
         <div className="sidebar-bottom">
-          <div style={{ color: 'rgba(255,255,255,.45)', fontSize: '.73rem', padding: '0 4px 8px', lineHeight: 1.5 }}>
-            {userProfile?.firstName} {userProfile?.lastName}<br />
-            <span style={{ opacity: .6 }}>{userProfile?.email}</span>
-          </div>
-          {/* Subscription status in sidebar */}
           {status && status !== 'active' && (
-            <div style={{ background: 'rgba(233,69,96,.2)', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: '.72rem', color: '#ff8fa3' }}>
-              {status === 'expiring' ? `⏰ ${days} days left` : status === 'grace' ? '🔒 Expired' : `⚠ ${status}`}
+            <div style={{
+              background: status === 'expiring' ? 'rgba(245,166,35,.2)' : 'rgba(233,69,96,.2)',
+              borderRadius: 8, padding: '7px 10px', marginBottom: 8,
+              fontSize: '.72rem',
+              color: status === 'expiring' ? '#fbbf24' : '#ff8fa3'
+            }}>
+              {status === 'expiring' ? `⏰ ${days} days left — renew soon` : '🔒 Subscription expired'}
             </div>
           )}
-          <button onClick={handleLogout} className="sidebar-link" style={{ width: '100%', border: 'none', cursor: 'pointer' }}>
+          <div style={{ padding: '0 4px 10px', lineHeight: 1.6 }}>
+            <div style={{ color: 'rgba(255,255,255,.7)', fontSize: '.8rem', fontWeight: 600 }}>
+              {userProfile?.firstName} {userProfile?.lastName}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,.35)', fontSize: '.72rem', wordBreak: 'break-all' }}>
+              {userProfile?.email}
+            </div>
+          </div>
+          <button onClick={handleLogout} className="sidebar-link" style={{ width: '100%', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,.5)' }}>
             <span className="icon">🚪</span> Sign Out
           </button>
         </div>
       </aside>
 
       <div className="main-area">
+        {/* Topbar */}
         <header className="topbar">
-          <span className="topbar-title">{school?.name}</span>
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="mobile-menu-btn"
+            style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', color: 'var(--navy)', display: 'none', marginRight: 12 }}
+          >☰</button>
+          <span className="topbar-title">{school?.name || 'School Management'}</span>
           <div className="topbar-right">
-            <span style={{ fontSize: '.78rem', color: 'var(--text-lt)' }}>
-              {currentTime.toLocaleDateString('en-GH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-            </span>
-            <span className={`sync-badge ${syncStatus === 'synced' ? 'synced' : syncStatus === 'offline' ? 'offline' : 'syncing'}`}>
-              {syncLabel[syncStatus] || '● Ready'}
-            </span>
+            <span className={`sync-badge ${sync.cls}`}>{sync.label}</span>
           </div>
         </header>
 
-        {/* Subscription banner — shows when trial/expiring/expired */}
-        <SubscriptionBanner />
+        {/* Subscription warning banner */}
+        {status === 'expiring' && (
+          <div style={{ background: '#fffbeb', borderBottom: '2px solid #f59e0b', padding: '8px 20px', fontSize: '.82rem', fontWeight: 600, color: '#92400e', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>⏰</span>
+            <span>Your subscription expires in <strong>{days} day{days !== 1 ? 's' : ''}</strong>. Contact 024XXXXXXX to renew.</span>
+            <a href="https://wa.me/233240000000" target="_blank" rel="noreferrer" style={{ marginLeft: 'auto', background: '#f59e0b', color: '#fff', padding: '3px 12px', borderRadius: 20, fontSize: '.76rem', fontWeight: 700, textDecoration: 'none' }}>Renew →</a>
+          </div>
+        )}
+        {(status === 'grace') && (
+          <div style={{ background: '#fef2f2', borderBottom: '2px solid #ef4444', padding: '8px 20px', fontSize: '.82rem', fontWeight: 600, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>🔒</span>
+            <span>Subscription expired — system is in read-only mode.</span>
+            <a href="https://wa.me/233240000000" target="_blank" rel="noreferrer" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', padding: '3px 12px', borderRadius: 20, fontSize: '.76rem', fontWeight: 700, textDecoration: 'none' }}>Contact Us →</a>
+          </div>
+        )}
 
         <main className="page-content">
           <Outlet />
