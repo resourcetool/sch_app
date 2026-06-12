@@ -23,80 +23,85 @@ import Settings from './pages/Settings';
 import SuperAdmin from './pages/SuperAdmin';
 import SubscriptionExpired from './pages/SubscriptionExpired';
 
-// Blocks access when subscription is expired/suspended
-// Super admin bypasses this since they need access to their own school too
 function SubscriptionGuard({ children }) {
   const { status, loading } = useSubscription();
   const { userProfile } = useAuth();
-
   if (loading) return null;
-
-  // Super admin always gets through
   if (isSuperAdmin(userProfile?.email)) return children;
-
-  // Block on expired or suspended
-  if (status === 'expired' || status === 'suspended') {
-    return <SubscriptionExpired />;
-  }
-
+  if (status === 'expired' || status === 'suspended') return <SubscriptionExpired />;
   return children;
 }
 
 function ProtectedRoute({ children, adminOnly }) {
   const { user, userProfile } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && userProfile?.role !== 'admin') return <Navigate to="/" replace />;
+  if (adminOnly && userProfile?.role !== 'admin' && userProfile?.role !== 'superadmin') {
+    return <Navigate to="/dashboard" replace />;
+  }
   return children;
 }
 
-function SuperAdminRoute({ children }) {
-  const { user, userProfile } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  if (!isSuperAdmin(userProfile?.email)) return <Navigate to="/" replace />;
-  return children;
+function SchoolApp() {
+  return (
+    <SchoolProvider>
+      <SubscriptionProvider>
+        <SubscriptionGuard>
+          <Layout />
+        </SubscriptionGuard>
+      </SubscriptionProvider>
+    </SchoolProvider>
+  );
 }
 
 function AppRoutes() {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
+  const isSA = user && isSuperAdmin(userProfile?.email);
 
+  // Root: redirect based on role
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/request-access" element={<RequestAccess />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // Super admin gets their own routes
+  if (isSA) {
+    return (
+      <Routes>
+        <Route path="/superadmin" element={<SuperAdmin />} />
+        <Route path="/login" element={<Navigate to="/superadmin" replace />} />
+        <Route path="*" element={<Navigate to="/superadmin" replace />} />
+      </Routes>
+    );
+  }
+
+  // Regular school user
   return (
     <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
-      <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
+      <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/register" element={<Navigate to="/dashboard" replace />} />
       <Route path="/request-access" element={<RequestAccess />} />
 
-      {/* Super Admin — standalone, no school context needed */}
-      <Route path="/superadmin" element={
-        <SuperAdminRoute><SuperAdmin /></SuperAdminRoute>
-      } />
-
-      {/* Protected school routes */}
-      <Route path="/" element={
-        <ProtectedRoute>
-          <SchoolProvider>
-            <SubscriptionProvider>
-              <SubscriptionGuard>
-                <Layout />
-              </SubscriptionGuard>
-            </SubscriptionProvider>
-          </SchoolProvider>
-        </ProtectedRoute>
-      }>
-        <Route index element={<Dashboard />} />
-        <Route path="students"  element={<Students />} />
-        <Route path="teachers"  element={<Teachers />} />
-        <Route path="classes"   element={<Classes />} />
-        <Route path="subjects"  element={<Subjects />} />
-        <Route path="scores"    element={<Scores />} />
-        <Route path="reports"   element={<Reports />} />
-        <Route path="promotion" element={<ProtectedRoute adminOnly><Promotion /></ProtectedRoute>} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="backup"    element={<ProtectedRoute adminOnly><Backup /></ProtectedRoute>} />
-        <Route path="settings"  element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+      <Route element={<SchoolApp />}>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/students"  element={<Students />} />
+        <Route path="/teachers"  element={<Teachers />} />
+        <Route path="/classes"   element={<Classes />} />
+        <Route path="/subjects"  element={<Subjects />} />
+        <Route path="/scores"    element={<Scores />} />
+        <Route path="/reports"   element={<Reports />} />
+        <Route path="/promotion" element={<ProtectedRoute adminOnly><Promotion /></ProtectedRoute>} />
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/backup"    element={<ProtectedRoute adminOnly><Backup /></ProtectedRoute>} />
+        <Route path="/settings"  element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+        <Route path="*"          element={<Navigate to="/dashboard" replace />} />
       </Route>
-
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
