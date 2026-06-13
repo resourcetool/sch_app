@@ -1,181 +1,280 @@
 // firestore.rules
+// CHANGED: Full rewrite — requirement #7
+// - Super admin full access to SA collections
+// - Multiple SA emails via custom claims (or email list in env)
+// - Deadline enforcement for score writes
+// - Assessment window management for admins
+// - Audit log — append only, admin can read
 // Deploy with: firebase deploy --only firestore:rules
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── HELPER FUNCTIONS ────────────────────────────────────────
+    // ── HELPERS ──────────────────────────────────────────────────
 
-    function isAuthenticated() {
+    function isAuth() {
       return request.auth != null;
     }
 
-    function getUserData() {
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function userRole() {
+      return isAuth() ? userDoc().role : null;
+    }
+
+    function userSchool() {
+      return isAuth() ? userDoc().schoolId : null;
+    }
+
+    // Super admin — stored in custom claim OR role field
+    // Custom claim is set server-side; role field is the client fallback
+    function isSuperAdmin() {
+      return isAuth() && (
+        request.auth.token.superAdmin == true ||
+        userDoc().role == 'superadmin'
+      );
+    }
+
     function isAdmin() {
-      return isAuthenticated() && getUserData().role == 'admin';
+      return isAuth() && userDoc().role == 'admin';
     }
 
     function isTeacher() {
-      return isAuthenticated() && getUserData().role == 'teacher';
+      return isAuth() && userDoc().role == 'teacher';
     }
 
-    function belongsToSchool(schoolId) {
-      return isAuthenticated() && getUserData().schoolId == schoolId;
+    function inSchool(schoolId) {
+      return isAuth() && userDoc().schoolId == schoolId;
     }
 
-    function isAdminOfSchool(schoolId) {
-      return isAdmin() && belongsToSchool(schoolId);
+    function isAdminOf(schoolId) {
+      return isAdmin() && inSchool(schoolId);
     }
 
-    function isTeacherOfSchool(schoolId) {
-      return isTeacher() && belongsToSchool(schoolId);
+    function isTeacherOf(schoolId) {
+      return isTeacher() && inSchool(schoolId);
     }
 
-    function isMemberOfSchool(schoolId) {
-      return isAdminOfSchool(schoolId) || isTeacherOfSchool(schoolId);
+    function isMemberOf(schoolId) {
+      return isAdminOf(schoolId) || isTeacherOf(schoolId);
     }
 
-    // ── SCHOOLS ─────────────────────────────────────────────────
+    // Deadline check — reads the assessment window doc
+    function withinDeadline(schoolId, classId, academicYear, term, subjectId) {
+      let windowId = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_' + subjectId;
+      let classWindowId = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_all';
+
+      let subWindow  = exists(/databases/$(database)/documents/assessmentWindows/$(windowId))
+                       ? get(/databases/$(database)/documents/assessmentWindows/$(windowId)).data
+                       : null;
+      let classWindow = exists(/databases/$(database)/documents/assessmentWindows/$(classWindowId))
+                        ? get(/databases/$(database)/documents/assessmentWindows/$(classWindowId)).data
+                        : null;
+
+      let window = subWindow != null ? subWindow : classWindow;
+
+      // No window configured = open
+      if (window == null) { return true; }
+
+      // Locked = closed
+      if (window.isLocked == true) { return false; }
+
+      // Check open/close dates
+      let now = request.time.toMillis();
+      if ('openDate' in window && now < window.openDate) { return false; }
+      if ('closeDate' in window && now > window.closeDate) { return false; }
+
+      return true;
+    }
+
+    // ── SCHOOLS ──────────────────────────────────────────────────
     match /schools/{schoolId} {
-      allow read: if isMemberOfSchool(schoolId);
-      allow create: if isAuthenticated();
-      allow update: if isAdminOfSchool(schoolId);
-      allow delete: if false; // Schools are never deleted via client
+      allow read:   if isSuperAdmin() || isMemberOf(schoolId);
+      allow create: if isAuth();
+      allow update: if isSuperAdmin() || isAdminOf(schoolId);
+      allow delete: if false;
     }
 
     // ── USERS ────────────────────────────────────────────────────
     match /users/{userId} {
-      // Users can read their own profile; admins can read all users in their school
-      allow read: if isAuthenticated() && (
-        request.auth.uid == userId ||
-        (isAdmin() && resource.data.schoolId == getUserData().schoolId)
+      allow read: if isAuth() && (
+        uid() == userId ||
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.schoolId == userSchool())
       );
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        request.auth.uid == userId ||
-        isAdminOfSchool(resource.data.schoolId)
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        uid() == userId ||
+        isSuperAdmin() ||
+        isAdminOf(resource.data.schoolId)
       );
-      allow delete: if isAdminOfSchool(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── STUDENTS ─────────────────────────────────────────────────
     match /students/{studentId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId);
-      allow delete: if false; // Students are never deleted — only status changed
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if false;
     }
 
     // ── ENROLLMENTS ───────────────────────────────────────────────
     match /enrollments/{enrollmentId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId);
-      allow delete: if false; // Enrollment history must be preserved
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if false;
     }
 
     // ── TEACHERS ─────────────────────────────────────────────────
     match /teachers/{teacherId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId);
-      allow delete: if isAdminOfSchool(resource.data.schoolId);
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── CLASSES ──────────────────────────────────────────────────
     match /classes/{classId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId);
-      allow delete: if isAdminOfSchool(resource.data.schoolId);
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── SUBJECTS ─────────────────────────────────────────────────
     match /subjects/{subjectId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId);
-      allow delete: if isAdminOfSchool(resource.data.schoolId);
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── SCORES ───────────────────────────────────────────────────
-    // Teachers can enter scores for their assigned subjects/classes only
     match /scores/{scoreId} {
-      allow read: if isMemberOfSchool(resource.data.schoolId);
+      allow read: if isSuperAdmin() || isMemberOf(resource.data.schoolId);
 
-      allow create: if isMemberOfSchool(request.resource.data.schoolId) && (
-        isAdminOfSchool(request.resource.data.schoolId) ||
+      // Teachers: only write within deadline AND for assigned classes/subjects
+      allow create: if (
+        isSuperAdmin() ||
+        isAdminOf(request.resource.data.schoolId) ||
         (
-          isTeacherOfSchool(request.resource.data.schoolId) &&
-          request.resource.data.subjectId in getUserData().assignedSubjects &&
-          request.resource.data.classId in getUserData().assignedClasses
+          isTeacherOf(request.resource.data.schoolId) &&
+          request.resource.data.subjectId in userDoc().assignedSubjects &&
+          request.resource.data.classId   in userDoc().assignedClasses  &&
+          withinDeadline(
+            request.resource.data.schoolId,
+            request.resource.data.classId,
+            request.resource.data.academicYear,
+            request.resource.data.term,
+            request.resource.data.subjectId
+          )
         )
       );
 
-      allow update: if isMemberOfSchool(resource.data.schoolId) && (
-        isAdminOfSchool(resource.data.schoolId) ||
+      allow update: if (
+        isSuperAdmin() ||
+        isAdminOf(resource.data.schoolId) ||
         (
-          isTeacherOfSchool(resource.data.schoolId) &&
-          !resource.data.isFinalized // Teachers cannot edit finalized scores
+          isTeacherOf(resource.data.schoolId) &&
+          !resource.data.isFinalized &&
+          !resource.data.isApproved &&
+          withinDeadline(
+            resource.data.schoolId,
+            resource.data.classId,
+            resource.data.academicYear,
+            resource.data.term,
+            resource.data.subjectId
+          )
         )
       );
 
-      allow delete: if isAdminOfSchool(resource.data.schoolId);
+      // Only admins and SA can delete (soft delete)
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── RESULTS ──────────────────────────────────────────────────
     match /results/{resultId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId) && !resource.data.isFinalized;
-      allow delete: if false; // Results are permanent records
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if (isSuperAdmin() || isAdminOf(resource.data.schoolId))
+                    && !resource.data.isFinalized;
+      allow delete: if false;
     }
 
-    // ── PROMOTIONS ───────────────────────────────────────────────
+    // ── PROMOTIONS ────────────────────────────────────────────────
     match /promotions/{promotionId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if false; // Promotion audit logs are immutable
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if false; // immutable
       allow delete: if false;
     }
 
     // ── ANALYTICS ────────────────────────────────────────────────
     match /analytics/{snapshotId} {
-      allow read:   if isMemberOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
-      allow update: if isAdminOfSchool(resource.data.schoolId);
-      allow delete: if isAdminOfSchool(resource.data.schoolId);
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+    }
+
+    // ── ASSESSMENT WINDOWS ────────────────────────────────────────
+    // Requirement #4 — admin sets open/close/lock dates
+    match /assessmentWindows/{windowId} {
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+    }
+
+    // ── SCORE AUDIT LOG ───────────────────────────────────────────
+    // Requirement #6 — append-only, admin read, nobody can edit/delete
+    match /scoreAuditLog/{logId} {
+      allow read:   if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if false; // immutable audit trail
+      allow delete: if false;
     }
 
     // ── SUBSCRIPTIONS ─────────────────────────────────────────────
-    // Schools can read their own subscription
-    // Only super admin (server-side) can write — enforced via Admin SDK
-    // Client-side: schools can only read, never write their own subscription
+    // Requirement #7 — Super admin full access
     match /subscriptions/{schoolId} {
-      allow read: if isAuthenticated() && getUserData().schoolId == schoolId;
-      allow write: if false; // Written only by super admin via Firebase Admin SDK / direct console
+      allow read:   if isSuperAdmin() || (isAuth() && userDoc().schoolId == schoolId);
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin();
+      allow delete: if false;
     }
 
     // ── REGISTRATION CODES ────────────────────────────────────────
+    // Requirement #7 — Super admin full access
     match /registrationCodes/{codeId} {
-      allow read: if isAuthenticated(); // needed for validation during registration
-      allow write: if false; // Super admin only via Admin SDK
+      allow read:   if isSuperAdmin() || isAuth(); // anyone authenticated can validate a code
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() || isAuth(); // marking code as used on registration
+      allow delete: if isSuperAdmin();
     }
 
     // ── ACCESS REQUESTS ───────────────────────────────────────────
+    // Requirement #2, #7 — Super admin full access, public can create
     match /accessRequests/{requestId} {
-      allow create: if true; // Anyone can submit a request (public form)
-      allow read, update, delete: if false; // Super admin only
+      allow create: if true;  // public form — no auth required
+      allow read:   if isSuperAdmin();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
     // ── BACKUPS ───────────────────────────────────────────────────
     match /backups/{backupId} {
-      allow read:   if isAdminOfSchool(resource.data.schoolId);
-      allow create: if isAdminOfSchool(request.resource.data.schoolId);
+      allow read:   if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
       allow update: if false;
       allow delete: if false;
     }

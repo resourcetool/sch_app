@@ -4,11 +4,11 @@
       "collectionGroup": "enrollments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId", "order": "ASCENDING" },
-        { "fieldPath": "classId",  "order": "ASCENDING" },
-        { "fieldPath": "academicYear", "order": "ASCENDING" },
-        { "fieldPath": "term",     "order": "ASCENDING" },
-        { "fieldPath": "status",   "order": "ASCENDING" }
+        { "fieldPath": "schoolId",    "order": "ASCENDING" },
+        { "fieldPath": "classId",     "order": "ASCENDING" },
+        { "fieldPath": "academicYear","order": "ASCENDING" },
+        { "fieldPath": "term",        "order": "ASCENDING" },
+        { "fieldPath": "status",      "order": "ASCENDING" }
       ]
     },
     {
@@ -47,6 +47,37 @@
         { "fieldPath": "classId",     "order": "ASCENDING" },
         { "fieldPath": "academicYear","order": "ASCENDING" },
         { "fieldPath": "term",        "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assessmentWindows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "scoreAuditLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId",  "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "accessRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING"  },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "registrationCodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "code",      "order": "ASCENDING"  },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],
