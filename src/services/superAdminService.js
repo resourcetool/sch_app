@@ -13,7 +13,7 @@
 
 import {
   collection, doc, getDoc, getDocs, setDoc,
-  updateDoc, query, orderBy, serverTimestamp, where
+  updateDoc, deleteDoc, query, orderBy, serverTimestamp, where
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { PLANS } from './subscriptionService';
@@ -359,4 +359,8 @@ export async function updateRequestStatus(requestId, status, adminEmail = '') {
     updatedAt:   Date.now(),
     updatedBy:   adminEmail,
   });
+}
+
+export async function deleteAccessRequest(requestId) {
+  await deleteDoc(doc(db, 'accessRequests', requestId));
 }
