@@ -484,14 +484,42 @@ export default function SuperAdmin() {
     setLoading(true);
     setLoadError('');
     try {
-      const [s, c, r] = await Promise.all([
+      // Use allSettled so a failure in one collection doesn't block the others.
+      // Each call is independent — schools may load even if codes index is missing, etc.
+      const [schoolsResult, codesResult, requestsResult] = await Promise.allSettled([
         getAllSchools(),
         getAllCodes(),
         getAllAccessRequests(),
       ]);
-      setSchools(s);
-      setCodes(c);
-      setRequests(r);
+
+      if (schoolsResult.status === 'fulfilled') {
+        setSchools(schoolsResult.value);
+      } else {
+        console.error('SuperAdmin: getAllSchools failed:', schoolsResult.reason);
+      }
+
+      if (codesResult.status === 'fulfilled') {
+        setCodes(codesResult.value);
+      } else {
+        console.error('SuperAdmin: getAllCodes failed:', codesResult.reason);
+      }
+
+      if (requestsResult.status === 'fulfilled') {
+        setRequests(requestsResult.value);
+      } else {
+        console.error('SuperAdmin: getAllAccessRequests failed:', requestsResult.reason);
+      }
+
+      // Only show top-level error if ALL three failed (likely a permissions issue)
+      const allFailed = [schoolsResult, codesResult, requestsResult].every(r => r.status === 'rejected');
+      if (allFailed) {
+        setLoadError(
+          'Permission denied. Make sure your email is listed in firestore.rules under SUPER_ADMIN_EMAILS and the rules have been deployed. ' +
+          schoolsResult.reason?.message
+        );
+      } else if (schoolsResult.status === 'rejected') {
+        setLoadError('Schools failed to load: ' + schoolsResult.reason?.message);
+      }
     } catch (err) {
       console.error('SuperAdmin load error:', err);
       setLoadError(err.message);
