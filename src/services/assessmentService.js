@@ -1,295 +1,313 @@
 // src/services/assessmentService.js
-// NEW FILE — Requirement #4, #5, #6
-// Handles assessment windows, deadline enforcement, audit trail,
-// admin override of teacher scores
+//
+// New file — implements the full assessment management system:
+// - Assessment deadline windows (open/close dates) managed by School Admin.
+// - Deadline enforcement in the service layer (teachers cannot save after deadline).
+// - Audit trail stored in the 'assessmentAuditLog' Firestore collection.
+// - School Admin override functions (edit, delete, approve).
 
 import {
   collection, doc, getDoc, getDocs, setDoc,
-  updateDoc, deleteDoc, query, where, orderBy
+  updateDoc, deleteDoc, query, where, orderBy, serverTimestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { idbGetAll, idbGet, idbPut } from './indexedDB';
 import { writeRecord } from './syncService';
 
-// ── ASSESSMENT WINDOW ─────────────────────────────────────────────
-// Schema: assessmentWindows/{schoolId}_{classId}_{academicYear}_{term}_{subjectId?}
+// ── DEADLINE MANAGEMENT ──────────────────────────────────────────
 
-export function buildWindowId(schoolId, classId, academicYear, term, subjectId = 'all') {
-  return `${schoolId}_${classId}_${academicYear}_${term}_${subjectId}`;
-}
-
-export async function setAssessmentWindow(schoolId, windowConfig) {
-  // windowConfig: { classId, academicYear, term, subjectId?,
-  //                 openDate, closeDate, isLocked, note }
-  const id = buildWindowId(
-    schoolId,
-    windowConfig.classId,
-    windowConfig.academicYear,
-    windowConfig.term,
-    windowConfig.subjectId || 'all'
-  );
-
-  const record = {
+/**
+ * Creates or replaces the assessment deadline configuration for a given
+ * school, academic year, and term.
+ *
+ * @param {string} schoolId
+ * @param {string} academicYear  e.g. "2024/2025"
+ * @param {string} term          e.g. "1"
+ * @param {object} config        { openAt, closeAt, label? }
+ *   openAt  — Unix ms timestamp when teachers may begin entry
+ *   closeAt — Unix ms timestamp when entry closes
+ * @param {string} adminId       UID of the School Admin performing the action
+ */
+export async function setAssessmentDeadline(schoolId, academicYear, term, config, adminId) {
+  const id  = `deadline_${schoolId}_${academicYear}_${term}`.replace(/\//g, '-');
+  const data = {
     id,
     schoolId,
-    ...windowConfig,
-    updatedAt: Date.now()
+    academicYear,
+    term,
+    openAt:    config.openAt  ?? null,
+    closeAt:   config.closeAt ?? null,
+    isLocked:  config.isLocked ?? false,
+    label:     config.label   ?? `${academicYear} Term ${term}`,
+    updatedAt: Date.now(),
+    updatedBy: adminId,
   };
-
-  await setDoc(doc(db, 'assessmentWindows', id), record, { merge: true });
-  await idbPut('assessmentWindows', record);
-  return record;
+  await setDoc(doc(db, 'assessmentDeadlines', id), data, { merge: true });
+  return data;
 }
 
-export async function getAssessmentWindow(schoolId, classId, academicYear, term, subjectId = 'all') {
-  const id = buildWindowId(schoolId, classId, academicYear, term, subjectId);
-
-  // Try IDB first
-  let record = await idbGet('assessmentWindows', id);
-  if (!record && navigator.onLine) {
-    const snap = await getDoc(doc(db, 'assessmentWindows', id));
-    if (snap.exists()) {
-      record = { id, ...snap.data() };
-      await idbPut('assessmentWindows', record);
-    }
-  }
-  return record || null;
+/**
+ * Fetches the deadline config for a specific school/year/term.
+ * Returns null if no config exists (entry is then unrestricted by default).
+ */
+export async function getAssessmentDeadline(schoolId, academicYear, term) {
+  const id  = `deadline_${schoolId}_${academicYear}_${term}`.replace(/\//g, '-');
+  const snap = await getDoc(doc(db, 'assessmentDeadlines', id));
+  return snap.exists() ? snap.data() : null;
 }
 
-export async function getWindowsForSchool(schoolId) {
-  try {
-    const snap = await getDocs(
-      query(collection(db, 'assessmentWindows'), where('schoolId', '==', schoolId))
-    );
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (err) {
-    console.error('getWindowsForSchool error:', err);
-    return [];
-  }
-}
-
-export async function lockAssessmentWindow(schoolId, classId, academicYear, term, subjectId = 'all') {
-  const id = buildWindowId(schoolId, classId, academicYear, term, subjectId);
-  await updateDoc(doc(db, 'assessmentWindows', id), {
-    isLocked:  true,
-    lockedAt:  Date.now(),
-    updatedAt: Date.now()
+/**
+ * Manually lock or unlock entry regardless of the closeAt date.
+ */
+export async function setDeadlineLock(schoolId, academicYear, term, locked, adminId) {
+  const id = `deadline_${schoolId}_${academicYear}_${term}`.replace(/\//g, '-');
+  await updateDoc(doc(db, 'assessmentDeadlines', id), {
+    isLocked:  locked,
+    updatedAt: Date.now(),
+    updatedBy: adminId,
   });
 }
 
-export async function unlockAssessmentWindow(schoolId, classId, academicYear, term, subjectId = 'all') {
-  const id = buildWindowId(schoolId, classId, academicYear, term, subjectId);
-  await updateDoc(doc(db, 'assessmentWindows', id), {
-    isLocked:   false,
-    unlockedAt: Date.now(),
-    updatedAt:  Date.now()
-  });
+/**
+ * Extend the closing date of an existing deadline.
+ */
+export async function extendDeadline(schoolId, academicYear, term, newCloseAt, adminId) {
+  return setAssessmentDeadline(schoolId, academicYear, term, { closeAt: newCloseAt }, adminId);
 }
 
-export async function extendDeadline(schoolId, classId, academicYear, term, newCloseDate, subjectId = 'all') {
-  const id = buildWindowId(schoolId, classId, academicYear, term, subjectId);
-  await updateDoc(doc(db, 'assessmentWindows', id), {
-    closeDate:  newCloseDate,
-    isLocked:   false,       // auto-unlock when extending
-    updatedAt:  Date.now()
-  });
-}
+/**
+ * Check whether the deadline window is currently open.
+ * Returns { allowed: boolean, reason: string }
+ */
+export function checkDeadlineStatus(deadline) {
+  if (!deadline) return { allowed: true, reason: '' };
 
-// ── DEADLINE ENFORCEMENT ──────────────────────────────────────────
-// Requirement #5 — checked in service layer before any write
-export async function checkDeadlineAllows(schoolId, classId, academicYear, term, subjectId) {
   const now = Date.now();
 
-  // Check subject-specific window first, then class-wide window
-  const subjectWindow = await getAssessmentWindow(schoolId, classId, academicYear, term, subjectId);
-  const classWindow   = await getAssessmentWindow(schoolId, classId, academicYear, term, 'all');
-  const window        = subjectWindow || classWindow;
-
-  if (!window) return { allowed: true, reason: null }; // no window = open
-
-  if (window.isLocked) {
-    return { allowed: false, reason: 'Assessment entry is locked by the administrator.' };
+  if (deadline.isLocked) {
+    return { allowed: false, reason: 'Assessment entry is currently locked by the school administrator.' };
   }
-
-  if (window.openDate && now < window.openDate) {
-    const opens = new Date(window.openDate).toLocaleString('en-GH');
+  if (deadline.openAt && now < deadline.openAt) {
+    const opens = new Date(deadline.openAt).toLocaleString();
     return { allowed: false, reason: `Assessment entry opens on ${opens}.` };
   }
-
-  if (window.closeDate && now > window.closeDate) {
-    const closed = new Date(window.closeDate).toLocaleString('en-GH');
-    return { allowed: false, reason: `Assessment deadline passed on ${closed}. Contact your administrator to extend.` };
+  if (deadline.closeAt && now > deadline.closeAt) {
+    const closed = new Date(deadline.closeAt).toLocaleString();
+    return { allowed: false, reason: `The submission deadline passed on ${closed}.` };
   }
 
-  return { allowed: true, reason: null };
+  return { allowed: true, reason: '' };
 }
 
 // ── AUDIT TRAIL ───────────────────────────────────────────────────
-// Requirement #6 — store complete before/after for every admin edit
-export async function logScoreAudit(auditData) {
-  // auditData: { schoolId, scoreId, enrollmentId, studentId,
-  //              subjectId, classId, academicYear, term,
-  //              previousValue, newValue, editorId, editorEmail,
-  //              reason }
-  const id = `audit_${crypto.randomUUID()}`;
 
-  const record = {
+/**
+ * Records an audit log entry whenever an admin modifies a teacher's score.
+ *
+ * @param {object} opts
+ *   scoreId, schoolId, editorId, editorEmail,
+ *   previousValue, newValue, reason (optional)
+ */
+export async function logAssessmentAudit(opts) {
+  const id = crypto.randomUUID();
+  const entry = {
     id,
-    ...auditData,
-    timestamp:    Date.now(),
-    timestampISO: new Date().toISOString()
+    schoolId:      opts.schoolId,
+    scoreId:       opts.scoreId,
+    editorId:      opts.editorId,
+    editorEmail:   opts.editorEmail,
+    previousValue: opts.previousValue ?? null,
+    newValue:      opts.newValue      ?? null,
+    reason:        opts.reason        ?? '',
+    action:        opts.action        ?? 'edit',  // 'edit' | 'delete' | 'approve'
+    timestamp:     Date.now(),
   };
-
-  await setDoc(doc(db, 'scoreAuditLog', id), record);
-  return record;
+  await setDoc(doc(db, 'assessmentAuditLog', id), entry);
+  return entry;
 }
 
-export async function getScoreAuditLog(schoolId, filters = {}) {
-  try {
-    let q = query(
-      collection(db, 'scoreAuditLog'),
+/**
+ * Retrieves the full audit log for a school (ordered newest-first).
+ */
+export async function getAuditLog(schoolId) {
+  const snap = await getDocs(
+    query(
+      collection(db, 'assessmentAuditLog'),
       where('schoolId', '==', schoolId),
       orderBy('timestamp', 'desc')
-    );
-    const snap = await getDocs(q);
-    let records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    )
+  );
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
 
-    if (filters.classId)  records = records.filter(r => r.classId  === filters.classId);
-    if (filters.subjectId) records = records.filter(r => r.subjectId === filters.subjectId);
-    if (filters.studentId) records = records.filter(r => r.studentId === filters.studentId);
+/**
+ * Retrieves the audit history for a single score record.
+ */
+export async function getScoreAuditHistory(scoreId) {
+  const snap = await getDocs(
+    query(
+      collection(db, 'assessmentAuditLog'),
+      where('scoreId', '==', scoreId),
+      orderBy('timestamp', 'desc')
+    )
+  );
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
 
-    return records;
-  } catch (err) {
-    console.error('getScoreAuditLog error:', err);
-    return [];
+// ── TEACHER SCORE SUBMISSION (with deadline enforcement) ──────────
+
+/**
+ * Validates the deadline before allowing a teacher to save/update a score.
+ * Throws an error if the deadline has passed or entry is locked.
+ * School Admins bypass this check (they use adminEditScore() instead).
+ *
+ * @param {string} schoolId
+ * @param {string} academicYear
+ * @param {string} term
+ */
+export async function validateTeacherCanSubmit(schoolId, academicYear, term) {
+  const deadline = await getAssessmentDeadline(schoolId, academicYear, term);
+  const { allowed, reason } = checkDeadlineStatus(deadline);
+  if (!allowed) {
+    throw new Error(reason);
   }
+  return deadline;
 }
 
-// ── ADMIN SCORE OVERRIDE ──────────────────────────────────────────
-// Requirement #4 — admin can edit/delete any teacher score
-export async function adminEditScore(schoolId, scoreId, newData, editor) {
-  // editor: { id, email, name }
+// ── ADMIN ASSESSMENT CONTROLS ─────────────────────────────────────
 
-  // Get existing record for audit
-  const existing = await idbGet('scores', scoreId);
-  if (!existing) throw new Error('Score record not found');
+/**
+ * School Admin edits a submitted score.
+ * Logs the change to the audit trail.
+ *
+ * @param {string} scoreId        Firestore document ID of the score
+ * @param {string} schoolId
+ * @param {object} updates        Fields to update (classScore, examScore, etc.)
+ * @param {object} adminProfile   { uid, email }
+ * @param {string} reason         Reason for the change (optional)
+ */
+export async function adminEditScore(scoreId, schoolId, updates, adminProfile, reason = '') {
+  const scoreRef  = doc(db, 'scores', scoreId);
+  const scoreSnap = await getDoc(scoreRef);
 
-  const updated = {
-    ...existing,
-    ...newData,
-    total: calculateTotal(newData),
+  if (!scoreSnap.exists()) throw new Error('Score record not found.');
+  const previous = scoreSnap.data();
+
+  // Recalculate total if class/exam scores changed
+  const classScore = updates.classScore ?? previous.classScore ?? 0;
+  const examScore  = updates.examScore  ?? previous.examScore  ?? 0;
+  const total      = Number(classScore) + Number(examScore);
+
+  const patch = {
+    ...updates,
+    classScore,
+    examScore,
+    total,
+    adminEditedAt: Date.now(),
+    adminEditedBy: adminProfile.email,
     updatedAt:     Date.now(),
-    lastEditedBy:  editor.email,
-    lastEditedAt:  Date.now(),
-    adminModified: true
   };
 
-  // Write updated score
-  await writeRecord('scores', scoreId, updated, schoolId);
+  await updateDoc(scoreRef, patch);
 
-  // Log audit trail
-  await logScoreAudit({
-    schoolId,
+  await logAssessmentAudit({
     scoreId,
-    enrollmentId: existing.enrollmentId,
-    studentId:    existing.studentId,
-    subjectId:    existing.subjectId,
-    classId:      existing.classId,
-    academicYear: existing.academicYear,
-    term:         existing.term,
-    previousValue: {
-      classScore: existing.classScore,
-      examScore:  existing.examScore,
-      total:      existing.total
-    },
-    newValue: {
-      classScore: updated.classScore,
-      examScore:  updated.examScore,
-      total:      updated.total
-    },
-    editorId:    editor.id,
-    editorEmail: editor.email,
-    editorName:  editor.name || editor.email,
-    reason:      newData.reason || 'Admin correction',
-    action:      'edit'
-  });
-
-  return updated;
-}
-
-export async function adminDeleteScore(schoolId, scoreId, editor, reason = '') {
-  const existing = await idbGet('scores', scoreId);
-  if (!existing) throw new Error('Score record not found');
-
-  // Soft delete — mark as deleted, keep for audit
-  const deleted = {
-    ...existing,
-    isDeleted:    true,
-    deletedAt:    Date.now(),
-    deletedBy:    editor.email,
-    updatedAt:    Date.now()
-  };
-  await writeRecord('scores', scoreId, deleted, schoolId);
-
-  await logScoreAudit({
     schoolId,
+    editorId:      adminProfile.uid,
+    editorEmail:   adminProfile.email,
+    previousValue: { classScore: previous.classScore, examScore: previous.examScore, total: previous.total },
+    newValue:      { classScore, examScore, total },
+    reason,
+    action:        'edit',
+  });
+
+  return { ...previous, ...patch };
+}
+
+/**
+ * School Admin deletes a score record.
+ * Logs the deletion to the audit trail.
+ */
+export async function adminDeleteScore(scoreId, schoolId, adminProfile, reason = '') {
+  const scoreRef  = doc(db, 'scores', scoreId);
+  const scoreSnap = await getDoc(scoreRef);
+  if (!scoreSnap.exists()) throw new Error('Score record not found.');
+  const previous = scoreSnap.data();
+
+  await deleteDoc(scoreRef);
+
+  await logAssessmentAudit({
     scoreId,
-    enrollmentId: existing.enrollmentId,
-    studentId:    existing.studentId,
-    subjectId:    existing.subjectId,
-    classId:      existing.classId,
-    academicYear: existing.academicYear,
-    term:         existing.term,
-    previousValue: {
-      classScore: existing.classScore,
-      examScore:  existing.examScore,
-      total:      existing.total
-    },
-    newValue:    null,
-    editorId:    editor.id,
-    editorEmail: editor.email,
-    editorName:  editor.name || editor.email,
-    reason:      reason || 'Admin deletion',
-    action:      'delete'
+    schoolId,
+    editorId:      adminProfile.uid,
+    editorEmail:   adminProfile.email,
+    previousValue: previous,
+    newValue:      null,
+    reason,
+    action:        'delete',
   });
 }
 
-export async function adminApproveScore(schoolId, scoreId, editor) {
-  const existing = await idbGet('scores', scoreId);
-  if (!existing) throw new Error('Score record not found');
+/**
+ * School Admin approves (finalises) an assessment record.
+ * Marks it as finalized so teachers can no longer edit it.
+ */
+export async function adminApproveScore(scoreId, schoolId, adminProfile) {
+  const scoreRef = doc(db, 'scores', scoreId);
+  const snap     = await getDoc(scoreRef);
+  if (!snap.exists()) throw new Error('Score record not found.');
+  const previous = snap.data();
 
-  const approved = {
-    ...existing,
-    isApproved:   true,
-    approvedAt:   Date.now(),
-    approvedBy:   editor.email,
-    updatedAt:    Date.now()
-  };
-  await writeRecord('scores', scoreId, approved, schoolId);
-
-  await logScoreAudit({
-    schoolId, scoreId,
-    enrollmentId: existing.enrollmentId,
-    studentId:    existing.studentId,
-    subjectId:    existing.subjectId,
-    classId:      existing.classId,
-    academicYear: existing.academicYear,
-    term:         existing.term,
-    previousValue: { isApproved: false },
-    newValue:      { isApproved: true },
-    editorId:    editor.id,
-    editorEmail: editor.email,
-    editorName:  editor.name || editor.email,
-    reason:      'Admin approval',
-    action:      'approve'
+  await updateDoc(scoreRef, {
+    isFinalized:   true,
+    approvedAt:    Date.now(),
+    approvedBy:    adminProfile.email,
   });
 
-  return approved;
+  await logAssessmentAudit({
+    scoreId,
+    schoolId,
+    editorId:      adminProfile.uid,
+    editorEmail:   adminProfile.email,
+    previousValue: { isFinalized: false },
+    newValue:      { isFinalized: true },
+    reason:        'Approved by school administrator',
+    action:        'approve',
+  });
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────
-function calculateTotal({ classScore = 0, examScore = 0, components = {} }) {
-  const componentTotal = Object.values(components)
-    .reduce((sum, v) => sum + (Number(v) || 0), 0);
-  return Number(classScore) + Number(examScore) + componentTotal;
+/**
+ * Fetch all score records for a school (admin view).
+ * Optionally filter by academicYear, term, classId, subjectId.
+ */
+export async function getAllSchoolScores(schoolId, filters = {}) {
+  let q = query(
+    collection(db, 'scores'),
+    where('schoolId', '==', schoolId),
+    orderBy('updatedAt', 'desc')
+  );
+
+  const snap = await getDocs(q);
+  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Apply optional client-side filters
+  if (filters.academicYear) results = results.filter(s => s.academicYear === filters.academicYear);
+  if (filters.term)         results = results.filter(s => s.term         === filters.term);
+  if (filters.classId)      results = results.filter(s => s.classId      === filters.classId);
+  if (filters.subjectId)    results = results.filter(s => s.subjectId    === filters.subjectId);
+
+  return results;
+}
+
+/**
+ * Fetch all assessment deadline configs for a school.
+ */
+export async function getAllDeadlines(schoolId) {
+  const snap = await getDocs(
+    query(
+      collection(db, 'assessmentDeadlines'),
+      where('schoolId', '==', schoolId),
+      orderBy('updatedAt', 'desc')
+    )
+  );
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }

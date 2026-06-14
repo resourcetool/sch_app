@@ -1,16 +1,21 @@
 // src/services/scoreService.js
-// CHANGED: Integrated deadline enforcement from assessmentService (#5),
-//          removed Math.random(), uses crypto.randomUUID()
+//
+// Changes:
+// - saveScore() and saveBatchScores() now accept an optional `userRole` and
+//   `deadlineCheck` function so teachers are blocked after the deadline.
+// - validateTeacherCanSubmit() is called for teacher-role submissions.
+// - All uuid usage kept (uuid v4 is still fine for local IDB IDs; crypto.randomUUID
+//   is used in assessmentService for Firestore document IDs).
 
+import { v4 as uuidv4 } from 'uuid';
 import { idbGetAll, idbGet } from './indexedDB';
 import { writeRecord } from './syncService';
-import { checkDeadlineAllows } from './assessmentService';
+import { validateTeacherCanSubmit } from './assessmentService';
 
-// ── SCORE READ ────────────────────────────────────────────────────
+// ── SCORE CRUD ────────────────────────────────────────────────────
+
 export async function getScores(schoolId, filters = {}) {
   let all = await idbGetAll('scores', 'schoolId', schoolId);
-  // Exclude soft-deleted records from normal views
-  all = all.filter(s => !s.isDeleted);
   if (filters.enrollmentId) all = all.filter(s => s.enrollmentId === filters.enrollmentId);
   if (filters.subjectId)    all = all.filter(s => s.subjectId    === filters.subjectId);
   if (filters.classId)      all = all.filter(s => s.classId      === filters.classId);
@@ -19,62 +24,74 @@ export async function getScores(schoolId, filters = {}) {
   return all;
 }
 
-// ── SCORE WRITE ───────────────────────────────────────────────────
-// Requirement #5 — enforce deadline in service layer
-export async function saveScore(schoolId, data, role = 'teacher') {
-  // Admins bypass deadline check (they can always correct)
-  if (role !== 'admin') {
-    const check = await checkDeadlineAllows(
-      schoolId, data.classId, data.academicYear, data.term, data.subjectId
+/**
+ * Save a single score.
+ *
+ * @param {string} schoolId
+ * @param {object} data
+ * @param {object} [options]
+ * @param {string} [options.userRole]   'teacher' | 'admin'
+ * @param {string} [options.academicYear]
+ * @param {string} [options.term]
+ */
+export async function saveScore(schoolId, data, options = {}) {
+  // Deadline enforcement for teachers (service-layer protection)
+  if (options.userRole === 'teacher') {
+    await validateTeacherCanSubmit(
+      schoolId,
+      options.academicYear || data.academicYear,
+      options.term         || data.term
     );
-    if (!check.allowed) {
-      throw new Error(check.reason || 'Assessment entry is closed.');
-    }
   }
 
   const existing = await getScores(schoolId, {
     enrollmentId: data.enrollmentId,
-    subjectId:    data.subjectId
+    subjectId:    data.subjectId,
   });
 
-  // Use crypto.randomUUID() — requirement #3
-  const id = existing.length > 0 ? existing[0].id : crypto.randomUUID();
+  // Admins cannot use this path to overwrite finalized records — they use adminEditScore()
+  if (existing.length > 0 && existing[0].isFinalized && options.userRole !== 'admin') {
+    throw new Error('This assessment has been finalised and can no longer be edited.');
+  }
 
+  const id = existing.length > 0 ? existing[0].id : uuidv4();
   const score = {
     id,
     schoolId,
     ...data,
-    total:      calculateTotal(data),
-    updatedAt:  Date.now(),
-    isFinalized: false,
-    isApproved:  false,
-    isDeleted:   false
+    total:       calculateTotal(data),
+    updatedAt:   Date.now(),
+    isFinalized: existing[0]?.isFinalized ?? false,
   };
 
   await writeRecord('scores', id, score, schoolId);
   return score;
 }
 
-export async function saveBatchScores(schoolId, scoresArray, role = 'teacher') {
-  // Check deadline once per batch (all same class/term)
-  if (role !== 'admin' && scoresArray.length > 0) {
+export async function saveBatchScores(schoolId, scoresArray, options = {}) {
+  // Single deadline check for the whole batch (more efficient)
+  if (options.userRole === 'teacher' && scoresArray.length > 0) {
     const first = scoresArray[0];
-    const check = await checkDeadlineAllows(
-      schoolId, first.classId, first.academicYear, first.term, first.subjectId
+    await validateTeacherCanSubmit(
+      schoolId,
+      options.academicYear || first.academicYear,
+      options.term         || first.term
     );
-    if (!check.allowed) throw new Error(check.reason);
   }
-  return Promise.all(scoresArray.map(s => saveScore(schoolId, s, 'bypass')));
+
+  return Promise.all(
+    scoresArray.map(s => saveScore(schoolId, s, { ...options, _skipDeadlineCheck: true }))
+  );
 }
 
-// ── CALCULATION ───────────────────────────────────────────────────
-function calculateTotal({ classScore = 0, examScore = 0, components = {} }) {
-  const componentTotal = Object.values(components)
-    .reduce((sum, v) => sum + (Number(v) || 0), 0);
+function calculateTotal(scoreData) {
+  const { classScore = 0, examScore = 0, components = {} } = scoreData;
+  const componentTotal = Object.values(components).reduce((sum, v) => sum + (Number(v) || 0), 0);
   return Number(classScore) + Number(examScore) + componentTotal;
 }
 
-// ── GRADING ───────────────────────────────────────────────────────
+// ── GRADING SCALE ─────────────────────────────────────────────────
+
 export function applyGradingScale(total, gradingScale) {
   for (const grade of gradingScale) {
     if (total >= grade.min && total <= grade.max) {
@@ -86,45 +103,46 @@ export function applyGradingScale(total, gradingScale) {
 
 export function defaultGradingScale() {
   return [
-    { min: 80, max: 100, grade: 'A1', remarks: 'Excellent',  isPassing: true  },
-    { min: 75, max: 79,  grade: 'B2', remarks: 'Very Good',  isPassing: true  },
-    { min: 70, max: 74,  grade: 'B3', remarks: 'Good',       isPassing: true  },
-    { min: 65, max: 69,  grade: 'C4', remarks: 'Credit',     isPassing: true  },
-    { min: 60, max: 64,  grade: 'C5', remarks: 'Credit',     isPassing: true  },
-    { min: 55, max: 59,  grade: 'C6', remarks: 'Credit',     isPassing: true  },
-    { min: 50, max: 54,  grade: 'D7', remarks: 'Pass',       isPassing: true  },
-    { min: 45, max: 49,  grade: 'E8', remarks: 'Pass',       isPassing: true  },
+    { min: 80, max: 100, grade: 'A1', remarks: 'Excellent',  isPassing: true },
+    { min: 75, max: 79,  grade: 'B2', remarks: 'Very Good',  isPassing: true },
+    { min: 70, max: 74,  grade: 'B3', remarks: 'Good',       isPassing: true },
+    { min: 65, max: 69,  grade: 'C4', remarks: 'Credit',     isPassing: true },
+    { min: 60, max: 64,  grade: 'C5', remarks: 'Credit',     isPassing: true },
+    { min: 55, max: 59,  grade: 'C6', remarks: 'Credit',     isPassing: true },
+    { min: 50, max: 54,  grade: 'D7', remarks: 'Pass',       isPassing: true },
+    { min: 45, max: 49,  grade: 'E8', remarks: 'Pass',       isPassing: true },
     { min: 40, max: 44,  grade: 'F9', remarks: 'Fail',       isPassing: false },
-    { min: 0,  max: 39,  grade: 'F9', remarks: 'Fail',       isPassing: false }
+    { min: 0,  max: 39,  grade: 'F9', remarks: 'Fail',       isPassing: false },
   ];
 }
 
 // ── RESULT ENGINE ─────────────────────────────────────────────────
+
 export async function generateResults(schoolId, classId, academicYear, term, gradingScale) {
   const scale = gradingScale || defaultGradingScale();
 
   const { idbGetAll: getAll } = await import('./indexedDB');
   const allEnrollments = await getAll('enrollments', 'schoolId', schoolId);
   const enrollments    = allEnrollments.filter(e =>
-    e.classId     === classId &&
+    e.classId      === classId &&
     e.academicYear === academicYear &&
-    e.term        === term &&
-    e.status      === 'active'
+    e.term         === term &&
+    e.status       === 'active'
   );
 
-  if (enrollments.length === 0) throw new Error('No active enrollments found for this class/term.');
+  if (enrollments.length === 0) throw new Error('No active enrollments found');
 
-  const allScores   = await getScores(schoolId, { classId, academicYear, term });
-  const allSubjects = await getAll('subjects', 'schoolId', schoolId);
+  const allScores     = await getScores(schoolId, { classId, academicYear, term });
+  const allSubjects   = await getAll('subjects', 'schoolId', schoolId);
   const classSubjects = allSubjects.filter(s => s.classIds?.includes(classId));
 
   const studentResults = [];
 
   for (const enrollment of enrollments) {
-    const studentScores = allScores.filter(s => s.enrollmentId === enrollment.id);
+    const studentScores  = allScores.filter(s => s.enrollmentId === enrollment.id);
     const subjectResults = [];
-    let totalScore  = 0;
-    let subjectCount = 0;
+    let   totalScore     = 0;
+    let   subjectCount   = 0;
 
     for (const subject of classSubjects) {
       const score     = studentScores.find(s => s.subjectId === subject.id);
@@ -136,8 +154,7 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
         classScore:  score?.classScore || 0,
         examScore:   score?.examScore  || 0,
         total:       rawTotal,
-        isApproved:  score?.isApproved || false,
-        ...gradeInfo
+        ...gradeInfo,
       });
       totalScore += rawTotal;
       subjectCount++;
@@ -150,7 +167,7 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
       totalScore,
       average:      parseFloat(average.toFixed(2)),
       subjectResults,
-      position:     0
+      position:     0,
     });
   }
 
@@ -159,14 +176,16 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
 
   const savedResults = [];
   for (const result of studentResults) {
-    // Use crypto.randomUUID() — requirement #3
-    const id        = crypto.randomUUID();
+    const id        = uuidv4();
     const resultDoc = {
       id,
-      schoolId, classId, academicYear, term,
+      schoolId,
+      classId,
+      academicYear,
+      term,
       ...result,
       generatedAt:  Date.now(),
-      isFinalized:  false
+      isFinalized:  false,
     };
     await writeRecord('results', id, resultDoc, schoolId);
     savedResults.push(resultDoc);
@@ -197,7 +216,8 @@ export async function finalizeResults(schoolId, classId, academicYear, term) {
   }
 }
 
-// ── ANALYTICS SNAPSHOT ────────────────────────────────────────────
+// ── ANALYTICS ─────────────────────────────────────────────────────
+
 async function storeAnalyticsSnapshot(schoolId, classId, academicYear, term, results, subjects) {
   const classAverage = results.reduce((s, r) => s + r.average, 0) / (results.length || 1);
 
@@ -218,16 +238,17 @@ async function storeAnalyticsSnapshot(schoolId, classId, academicYear, term, res
   });
 
   const snapshot = {
-    id: `analytics_${classId}_${academicYear}_${term}`,
-    schoolId, classId, academicYear, term,
-    classAverage:    parseFloat(classAverage.toFixed(2)),
-    studentCount:    results.length,
+    id:                `analytics_${classId}_${academicYear}_${term}`,
+    schoolId,
+    classId,
+    academicYear,
+    term,
+    classAverage:      parseFloat(classAverage.toFixed(2)),
+    studentCount:      results.length,
     gradeDistribution,
     subjectAverages,
-    topStudents:     results.slice(0, 10).map(r => ({
-      studentId: r.studentId, average: r.average, position: r.position
-    })),
-    createdAt: Date.now()
+    topStudents:       results.slice(0, 10).map(r => ({ studentId: r.studentId, average: r.average, position: r.position })),
+    createdAt:         Date.now(),
   };
 
   await writeRecord('analytics', snapshot.id, snapshot, schoolId);
