@@ -283,7 +283,10 @@ function ExcelScoreGrid({ enrollments, students, scores, setScores, maxClass, ma
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────
 export default function Scores() {
-  const { school, classes, subjects, schoolId } = useSchool();
+  const { school, classes, subjects, schoolId, classesForUser, subjectsForUser, teacherProfile } = useSchool();
+  // Teachers only see their assigned classes/subjects; admins see all
+  const availableClasses  = classesForUser;
+  const availableSubjects = subjectsForUser;
   const { userProfile } = useAuth();
   const isAdmin = userProfile?.role === 'admin';
 
@@ -312,7 +315,7 @@ export default function Scores() {
   const selectedSubject = subjects.find(s => s.id === filters.subjectId);
   const maxClass        = selectedSubject?.maxClassScore ?? 30;
   const maxExam         = selectedSubject?.maxExamScore  ?? 70;
-  const classSubjects   = subjects.filter(s => s.classIds?.includes(filters.classId));
+  const classSubjects   = availableSubjects.filter(s => s.classIds?.includes(filters.classId));
 
   const deadlineAllowed = deadline ? checkDeadlineStatus(deadline).allowed : true;
   const inputDisabled   = !deadlineAllowed && !isAdmin;
@@ -413,7 +416,7 @@ export default function Scores() {
                 <label style={{ fontSize: '.75rem' }}>Class</label>
                 <select value={filters.classId} onChange={e => setFilters(f => ({ ...f, classId: e.target.value, subjectId: '' }))}>
                   <option value="">— Class —</option>
-                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {availableClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ minWidth: 180 }}>
@@ -493,7 +496,7 @@ export default function Scores() {
                 <label style={{ fontSize: '.75rem' }}>Class</label>
                 <select value={adminFilters.classId} onChange={e => setAdminFilters(f => ({ ...f, classId: e.target.value }))} style={{ minWidth: 160 }}>
                   <option value="">All Classes</option>
-                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {availableClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div className="form-group">
