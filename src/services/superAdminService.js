@@ -172,26 +172,37 @@ export async function createRegistrationCode(schoolName, plan, createdByEmail) {
 export async function validateCode(code, schoolName) {
   const q    = query(collection(db, 'registrationCodes'), where('code', '==', code.toUpperCase().trim()));
   const snap = await getDocs(q);
-  if (snap.empty) return { valid: false, reason: 'Code not found' };
+  if (snap.empty) return { valid: false, reason: 'Code not found. Check the code and try again.' };
 
   const data = { id: snap.docs[0].id, ...snap.docs[0].data() };
 
-  if (data.status === 'used')    return { valid: false, reason: 'This code has already been used' };
-  if (data.status === 'expired') return { valid: false, reason: 'This code has expired' };
+  if (data.status === 'used')    return { valid: false, reason: 'This code has already been used to register a school.' };
+  if (data.status === 'expired') return { valid: false, reason: 'This code has expired. Ask your provider to generate a new one.' };
 
   if (Date.now() > data.expiresAt) {
     await updateDoc(doc(db, 'registrationCodes', data.id), { status: 'expired' });
-    return { valid: false, reason: 'This code has expired (48-hour limit)' };
+    return { valid: false, reason: 'This code has expired (48-hour limit). Ask your provider to generate a new one.' };
   }
 
-  // Case-insensitive, whitespace-normalised school name check
-  const codeName  = data.schoolName.toLowerCase().replace(/\s/g, '');
-  const inputName = schoolName.toLowerCase().replace(/\s/g, '');
-  if (
-    !inputName.includes(codeName.substring(0, 4)) &&
-    !codeName.includes(inputName.substring(0, 4))
-  ) {
-    return { valid: false, reason: 'School name does not match the code. Contact your provider.' };
+  // ── SCHOOL NAME CHECK ─────────────────────────────────────────
+  // Normalise both names: lowercase, strip punctuation and extra spaces.
+  // Then check if either name contains the other (handles abbreviations,
+  // slight differences in punctuation like "May's" vs "Mays").
+  const normalise = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const codeName  = normalise(data.schoolName);
+  const inputName = normalise(schoolName);
+
+  // Split both into words and check that at least half the code's words appear in the input
+  const codeWords  = codeName.split(' ').filter(Boolean);
+  const inputWords = inputName.split(' ').filter(Boolean);
+  const matchCount = codeWords.filter(w => inputWords.some(iw => iw.includes(w) || w.includes(iw))).length;
+  const threshold  = Math.max(1, Math.ceil(codeWords.length * 0.5));
+
+  if (matchCount < threshold) {
+    return {
+      valid:  false,
+      reason: `School name does not match this code. The code was issued for "${data.schoolName}". Please enter your school name exactly as submitted when requesting access.`,
+    };
   }
 
   return { valid: true, data };
