@@ -1,22 +1,36 @@
 // src/pages/Reports.jsx
+//
+// Changes:
+// - downloadStudentReport() now passes school's report card extra fields
+//   (classTeacher, counsellor, academicHead, administrator, nextTermBegins, mec)
+//   to generateStudentReportPDF() so the new report card format is fully populated.
+// - noOnRoll (total students in class) and position/totalStudents passed correctly.
+// - "Print All" button added: generates and downloads one PDF per student in sequence.
+// - All existing functionality preserved.
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSchool } from '../contexts/SchoolContext';
+import { useSchool }    from '../contexts/SchoolContext';
 import { getEnrollments, getStudents } from '../services/studentService';
-import { getResultsForClass, generateResults, finalizeResults, defaultGradingScale } from '../services/scoreService';
-import { generateStudentReportPDF, generateClassReportPDF, downloadPDF } from '../services/reportService';
+import {
+  getResultsForClass, generateResults,
+  finalizeResults, defaultGradingScale,
+} from '../services/scoreService';
+import {
+  generateStudentReportPDF, generateClassReportPDF, downloadPDF,
+} from '../services/reportService';
 import { exportResultsAsExcel } from '../services/backupService';
 
 export default function Reports() {
   const { school, classes, subjects, schoolId } = useSchool();
   const [filters, setFilters] = useState({
-    classId: '', academicYear: school?.academicYear || '', term: school?.currentTerm || '1'
+    classId: '', academicYear: school?.academicYear || '', term: school?.currentTerm || '1',
   });
-  const [results, setResults] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [results,    setResults]    = useState([]);
+  const [students,   setStudents]   = useState([]);
+  const [loading,    setLoading]    = useState(false);
   const [generating, setGenerating] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
-  const [tab, setTab] = useState('results'); // 'results' | 'generate'
+  const [printing,   setPrinting]   = useState(false);
 
   const load = useCallback(async () => {
     if (!filters.classId || !schoolId) return;
@@ -24,18 +38,16 @@ export default function Reports() {
     try {
       const [res, studs] = await Promise.all([
         getResultsForClass(schoolId, filters.classId, filters.academicYear, filters.term),
-        getStudents(schoolId)
+        getStudents(schoolId),
       ]);
       setResults(res.sort((a, b) => a.position - b.position));
       setStudents(studs);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [filters, schoolId]);
 
   useEffect(() => { load(); }, [load]);
 
-  const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
+  const studentMap    = Object.fromEntries(students.map(s => [s.id, s]));
   const selectedClass = classes.find(c => c.id === filters.classId);
 
   async function handleGenerateResults() {
@@ -43,14 +55,12 @@ export default function Reports() {
     if (!window.confirm(`Generate results for ${selectedClass?.name} — ${filters.academicYear} Term ${filters.term}?\n\nThis will compute all positions and averages.`)) return;
     setGenerating(true);
     try {
-      await generateResults(schoolId, filters.classId, filters.academicYear, filters.term, defaultGradingScale());
+      const scale = school?.gradingScale?.length ? school.gradingScale : defaultGradingScale();
+      await generateResults(schoolId, filters.classId, filters.academicYear, filters.term, scale);
       await load();
       alert('Results generated successfully!');
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setGenerating(false);
-    }
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setGenerating(false); }
   }
 
   async function handleFinalize() {
@@ -60,11 +70,23 @@ export default function Reports() {
       await finalizeResults(schoolId, filters.classId, filters.academicYear, filters.term);
       await load();
       alert('Results finalized!');
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setFinalizing(false);
-    }
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setFinalizing(false); }
+  }
+
+  // Extra info pulled from school settings for the report card
+  function buildExtraInfo() {
+    return {
+      classTeacher:  school?.classTeacher  || '',
+      counsellor:    school?.counsellor    || '',
+      academicHead:  school?.academicHead  || '',
+      administrator: school?.administrator || '',
+      nextTermBegins: school?.nextTermBegins
+        ? new Date(school.nextTermBegins).toLocaleDateString('en-GH', { day:'2-digit', month:'2-digit', year:'numeric' })
+        : '',
+      mec:     school?.mec || '',
+      noOnRoll: results.length,
+    };
   }
 
   async function downloadStudentReport(result) {
@@ -77,9 +99,37 @@ export default function Reports() {
       selectedClass,
       school,
       filters.term,
-      filters.academicYear
+      filters.academicYear,
+      buildExtraInfo(),
     );
-    downloadPDF(doc, `report_${student.studentCode}_term${filters.term}.pdf`);
+    downloadPDF(doc, `report_${student.studentCode || student.firstName}_term${filters.term}.pdf`);
+  }
+
+  async function handlePrintAll() {
+    if (results.length === 0) { alert('No results to print'); return; }
+    if (!window.confirm(`Print ${results.length} individual report cards? Each will download as a separate PDF.`)) return;
+    setPrinting(true);
+    try {
+      const extraInfo = buildExtraInfo();
+      for (const result of results) {
+        const student = studentMap[result.studentId];
+        if (!student) continue;
+        const doc = await generateStudentReportPDF(
+          student,
+          { classId: filters.classId },
+          { ...result, totalStudents: results.length },
+          selectedClass,
+          school,
+          filters.term,
+          filters.academicYear,
+          extraInfo,
+        );
+        downloadPDF(doc, `report_${student.studentCode || student.firstName}_term${filters.term}.pdf`);
+        // Small delay to avoid browser blocking multiple downloads
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch (err) { alert('Print error: ' + err.message); }
+    finally { setPrinting(false); }
   }
 
   async function downloadClassReport() {
@@ -93,16 +143,19 @@ export default function Reports() {
   }
 
   const isFinalized = results.length > 0 && results.every(r => r.isFinalized);
-  const hasResults = results.length > 0;
+  const hasResults  = results.length > 0;
 
   return (
     <div>
       <div className="page-header">
         <h1>Reports</h1>
         {hasResults && (
-          <div className="actions">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={handleExcelExport} className="btn btn-ghost">⬇ Excel</button>
             <button onClick={downloadClassReport} className="btn btn-ghost">📄 Class PDF</button>
+            <button onClick={handlePrintAll} className="btn btn-ghost" disabled={printing}>
+              {printing ? '⏳ Printing…' : '🖨 Print All Cards'}
+            </button>
             {!isFinalized && (
               <button onClick={handleFinalize} className="btn btn-accent" disabled={finalizing}>
                 {finalizing ? 'Finalizing…' : '🔒 Finalize Results'}
@@ -129,7 +182,9 @@ export default function Reports() {
           <div className="form-group">
             <label style={{ fontSize: '.75rem' }}>Term</label>
             <select value={filters.term} onChange={e => setFilters(f => ({ ...f, term: e.target.value }))} style={{ maxWidth: 100 }}>
-              <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
+              <option value="1">Term 1</option>
+              <option value="2">Term 2</option>
+              <option value="3">Term 3</option>
             </select>
           </div>
           <div style={{ alignSelf: 'flex-end' }}>
@@ -142,6 +197,12 @@ export default function Reports() {
         {isFinalized && (
           <div className="alert alert-success" style={{ marginTop: 12, marginBottom: 0 }}>
             ✓ Results are finalized. Promotion is now available for this class/term.
+          </div>
+        )}
+
+        {!school?.classTeacher && hasResults && (
+          <div className="alert alert-warning" style={{ marginTop: 12, marginBottom: 0 }}>
+            ⚠ Report card signatories not configured. Go to <strong>Settings → Report Card</strong> to add staff names and your logo.
           </div>
         )}
       </div>
@@ -171,7 +232,7 @@ export default function Reports() {
               <div className="stat-card green">
                 <span className="label">Class Average</span>
                 <span className="value">
-                  {results.length > 0 ? (results.reduce((s, r) => s + r.average, 0) / results.length).toFixed(1) : 0}%
+                  {(results.reduce((s, r) => s + r.average, 0) / results.length).toFixed(1)}%
                 </span>
               </div>
               <div className="stat-card blue">
@@ -195,7 +256,7 @@ export default function Reports() {
                     <th>Total</th>
                     <th>Average</th>
                     <th>Status</th>
-                    <th>Report</th>
+                    <th>Report Card</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -222,8 +283,8 @@ export default function Reports() {
                           </span>
                         </td>
                         <td>
-                          <button className="btn btn-ghost btn-sm" onClick={() => downloadStudentReport(result)}>
-                            📄 PDF
+                          <button className="btn btn-primary btn-sm" onClick={() => downloadStudentReport(result)}>
+                            📄 Print
                           </button>
                         </td>
                       </tr>

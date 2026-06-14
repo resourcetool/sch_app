@@ -16,7 +16,7 @@ import {
   isSuperAdmin, getAllSchools, getAllCodes, getAllAccessRequests,
   createRegistrationCode, renewSubscription, suspendSchool,
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
-  addSuperAdminNote, getSchoolDetails,
+  addSuperAdminNote, getSchoolDetails, deleteAccessRequest,
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
@@ -563,12 +563,14 @@ export default function SuperAdmin() {
   }
 
   async function handleRejectRequest(r) {
-    if (!window.confirm(`Reject request from ${r.schoolName}?`)) return;
+    if (!window.confirm(
+      `Reject and permanently delete the request from "${r.schoolName}"?\n\nThis cannot be undone.`
+    )) return;
     try {
-      await updateRequestStatus(r.id, 'rejected', userProfile.email);
+      await deleteAccessRequest(r.id);
       load();
     } catch (err) {
-      alert('Failed to reject: ' + err.message);
+      alert('Failed to delete request: ' + err.message);
     }
   }
 
@@ -791,7 +793,7 @@ export default function SuperAdmin() {
                                       className="btn btn-danger btn-sm"
                                       onClick={() => handleRejectRequest(r)}
                                     >
-                                      Reject
+                                      🗑 Reject & Delete
                                     </button>
                                   </>
                                 )}
