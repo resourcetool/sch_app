@@ -31,7 +31,8 @@ export default function Register() {
       setCodeData(result.data);
       setStep(2);
     } catch (err) {
-      setError('Validation failed. Check your connection and try again.');
+  console.error(err);
+  setError(err.message);
     } finally {
       setLoading(false);
     }
