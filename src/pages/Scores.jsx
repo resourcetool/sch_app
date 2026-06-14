@@ -1,510 +1,668 @@
 // src/pages/Scores.jsx
-// Complete rewrite — professional Excel-like score entry with deadline enforcement
+//
+// Changes:
+// - Teachers see a deadline status banner and are blocked from saving after the deadline
+//   (frontend validation + service-layer enforcement in scoreService).
+// - School Admins see all submitted scores with edit / delete / approve controls.
+// - Admin edit modal records a reason and writes an audit log entry.
+// - Admin delete prompts for a reason before deleting.
+// - Admin approve marks a score as finalised.
+// - saveBatchScores() is called with { userRole } so the service layer can enforce the deadline.
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSchool }  from '../contexts/SchoolContext';
-import { useAuth }    from '../contexts/AuthContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSchool } from '../contexts/SchoolContext';
+import { useAuth }   from '../contexts/AuthContext';
 import { getEnrollments, getStudents } from '../services/studentService';
-import { getScores, saveBatchScores, defaultGradingScale, applyGradingScale } from '../services/scoreService';
-import { getAssessmentWindow, checkDeadlineAllows } from '../services/assessmentService';
+import {
+  getScores, saveScore, saveBatchScores,
+  defaultGradingScale, applyGradingScale,
+} from '../services/scoreService';
+import {
+  getAssessmentDeadline, checkDeadlineStatus,
+  adminEditScore, adminDeleteScore, adminApproveScore,
+  getAllSchoolScores,
+} from '../services/assessmentService';
 
-const GRADE_SCALE = defaultGradingScale();
+// ── DEADLINE BANNER ───────────────────────────────────────────────
 
-function gradeColor(grade) {
-  if (!grade || grade === 'N/A') return '#94a3b8';
-  if (grade === 'A1')            return '#16a34a';
-  if (grade.startsWith('B'))     return '#2563eb';
-  if (grade.startsWith('C'))     return '#d97706';
-  if (grade.startsWith('D') || grade.startsWith('E')) return '#ea580c';
-  return '#dc2626';
+function DeadlineBanner({ deadline }) {
+  if (!deadline) return null;
+  const { allowed, reason } = checkDeadlineStatus(deadline);
+  const now = Date.now();
+
+  const closeDate = deadline.closeAt ? new Date(deadline.closeAt).toLocaleString() : null;
+  const openDate  = deadline.openAt  ? new Date(deadline.openAt).toLocaleString()  : null;
+
+  if (!allowed) {
+    return (
+      <div className="alert alert-danger" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: '1.2rem' }}>🔒</span>
+        <div>
+          <strong>Entry Closed</strong>
+          <div style={{ fontSize: '.84rem', marginTop: 2 }}>{reason}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (closeDate) {
+    return (
+      <div className="alert alert-warning" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: '1.2rem' }}>⏰</span>
+        <div>
+          <strong>Deadline:</strong> {closeDate}
+          {deadline.label && <span style={{ marginLeft: 8, opacity: .7, fontSize: '.82rem' }}>({deadline.label})</span>}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
-export default function Scores() {
-  const { school, classes, subjects, schoolId } = useSchool();
-  const { userProfile } = useAuth();
+// ── ADMIN EDIT SCORE MODAL ────────────────────────────────────────
 
-  const [filters, setFilters] = useState({
-    classId: '', subjectId: '',
-    academicYear: school?.academicYear || '',
-    term:         school?.currentTerm  || '1'
-  });
-  const [enrollments, setEnrollments] = useState([]);
-  const [students,    setStudents]    = useState([]);
-  const [savedScores, setSavedScores] = useState([]);   // from DB
-  const [localScores, setLocalScores] = useState({});   // { enrollmentId: {cs, es} }
-  const [loading,     setLoading]     = useState(false);
-  const [saving,      setSaving]      = useState(false);
-  const [saved,       setSaved]       = useState(false);
-  const [window_,     setWindow_]     = useState(null);
-  const [deadline,    setDeadline]    = useState(null);
-  const inputRefs = useRef({});
+function AdminEditModal({ score, schoolId, userProfile, onClose, onSaved }) {
+  const [classScore, setClassScore] = useState(score.classScore ?? 0);
+  const [examScore,  setExamScore]  = useState(score.examScore  ?? 0);
+  const [reason,     setReason]     = useState('');
+  const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState('');
 
-  const isAdmin   = userProfile?.role === 'admin';
-  const isTeacher = userProfile?.role === 'teacher';
-
-  const availableClasses = isTeacher
-    ? classes.filter(c => userProfile?.assignedClasses?.includes(c.id))
-    : classes;
-
-  const selectedSubject = subjects.find(s => s.id === filters.subjectId);
-  const classSubjects   = subjects.filter(s => s.classIds?.includes(filters.classId));
-  const maxCS = selectedSubject?.maxClassScore ?? 30;
-  const maxES = selectedSubject?.maxExamScore  ?? 70;
-
-  // Sync school defaults
-  useEffect(() => {
-    if (school) {
-      setFilters(f => ({
-        ...f,
-        academicYear: f.academicYear || school.academicYear || '',
-        term:         f.term         || school.currentTerm  || '1'
-      }));
+  async function handleSave(e) {
+    e.preventDefault();
+    if (Number(classScore) < 0 || Number(examScore) < 0) {
+      setError('Scores cannot be negative.'); return;
     }
-  }, [school]);
-
-  const load = useCallback(async () => {
-    if (!filters.classId || !filters.subjectId || !schoolId) return;
-    setLoading(true);
-    setLocalScores({});
-    try {
-      const [enrs, studs, sc, win, dl] = await Promise.all([
-        getEnrollments(schoolId, {
-          classId: filters.classId, academicYear: filters.academicYear,
-          term: filters.term, status: 'active'
-        }),
-        getStudents(schoolId),
-        getScores(schoolId, { ...filters }),
-        getAssessmentWindow(schoolId, filters.classId, filters.academicYear, filters.term, filters.subjectId),
-        checkDeadlineAllows(schoolId, filters.classId, filters.academicYear, filters.term, filters.subjectId)
-      ]);
-      setEnrollments(enrs);
-      setStudents(studs);
-      setSavedScores(sc);
-      setWindow_(win);
-      setDeadline(dl);
-    } catch (err) {
-      console.error('Load error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, schoolId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  // Build display rows
-  const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
-
-  const rows = enrollments.map(enr => {
-    const db_score  = savedScores.find(s => s.enrollmentId === enr.id);
-    const local     = localScores[enr.id];
-    const cs        = local?.cs ?? (db_score?.classScore ?? '');
-    const es        = local?.es ?? (db_score?.examScore  ?? '');
-    const total     = (cs !== '' || es !== '') ? Math.min((Number(cs)||0)+(Number(es)||0), maxCS+maxES) : null;
-    const gi        = total !== null ? applyGradingScale(total, GRADE_SCALE) : null;
-    const isDirty   = !!local;
-    const isApproved = db_score?.isApproved || false;
-    const isFinalized = db_score?.isFinalized || false;
-    return { enr, db_score, cs, es, total, gi, isDirty, isApproved, isFinalized };
-  });
-
-  const entryBlocked = isTeacher && deadline && !deadline.allowed;
-  const dirtyCount   = Object.keys(localScores).length;
-  const enteredCount = rows.filter(r => r.total !== null).length;
-  const classAvg     = enteredCount > 0
-    ? (rows.reduce((s, r) => s + (r.total || 0), 0) / enteredCount).toFixed(1)
-    : null;
-
-  function updateLocal(enrollmentId, field, value) {
-    setLocalScores(prev => {
-      const cur = prev[enrollmentId] || {};
-      return { ...prev, [enrollmentId]: { ...cur, [field]: value } };
-    });
-    setSaved(false);
-  }
-
-  // Tab key navigation between cells
-  function handleKeyDown(e, rowIdx, field) {
-    if (e.key === 'Tab' || e.key === 'Enter') {
-      e.preventDefault();
-      const nextField = field === 'cs' ? 'es' : 'cs';
-      const nextRow   = field === 'cs' ? rowIdx : rowIdx + 1;
-      if (nextRow < rows.length) {
-        const key = `${rows[nextRow].enr.id}_${nextField}`;
-        inputRefs.current[key]?.focus();
-      }
-    }
-  }
-
-  async function handleSave() {
-    if (entryBlocked) { alert(deadline.reason); return; }
-    if (!filters.classId || !filters.subjectId) { alert('Select class and subject first.'); return; }
-    if (dirtyCount === 0) { alert('No changes to save.'); return; }
-
     setSaving(true);
+    setError('');
     try {
-      const batch = Object.entries(localScores).map(([enrollmentId, vals]) => {
-        const enr = enrollments.find(e => e.id === enrollmentId);
-        const existing = savedScores.find(s => s.enrollmentId === enrollmentId);
-        return {
-          enrollmentId,
-          studentId:    enr?.studentId,
-          classId:      filters.classId,
-          subjectId:    filters.subjectId,
-          academicYear: filters.academicYear,
-          term:         filters.term,
-          classScore: Number(vals.cs ?? existing?.classScore ?? 0),
-          examScore:  Number(vals.es ?? existing?.examScore  ?? 0)
-        };
-      });
-
-      await saveBatchScores(schoolId, batch, isAdmin ? 'admin' : 'teacher');
-      setSaved(true);
-      setLocalScores({});
-      setTimeout(() => setSaved(false), 4000);
-      await load();
+      await adminEditScore(
+        score.id,
+        schoolId,
+        { classScore: Number(classScore), examScore: Number(examScore) },
+        { uid: userProfile.id, email: userProfile.email },
+        reason
+      );
+      onSaved();
     } catch (err) {
-      alert('Save failed: ' + err.message);
+      setError(err.message);
     } finally {
       setSaving(false);
     }
   }
 
-  // Window status bar
-  function WindowBar() {
-    if (!window_) return null;
-    const now = Date.now();
-    let cfg;
-    if (window_.isLocked)                             cfg = { bg: '#fee2e2', border: '#fca5a5', color: '#991b1b', icon: '🔒', msg: 'Assessment entry is locked.' };
-    else if (window_.openDate && now < window_.openDate) cfg = { bg: '#dbeafe', border: '#93c5fd', color: '#1d4ed8', icon: '⏳', msg: `Opens ${new Date(window_.openDate).toLocaleString('en-GH')}` };
-    else if (window_.closeDate && now > window_.closeDate) cfg = { bg: '#ede9fe', border: '#c4b5fd', color: '#6d28d9', icon: '⌛', msg: `Deadline passed ${new Date(window_.closeDate).toLocaleString('en-GH')}` };
-    else if (window_.closeDate) {
-      const d = Math.ceil((window_.closeDate - now) / 864e5);
-      cfg = d <= 2
-        ? { bg: '#fef3c7', border: '#fde68a', color: '#92400e', icon: '⚠️', msg: `Deadline in ${d} day${d!==1?'s':''}: ${new Date(window_.closeDate).toLocaleString('en-GH')}` }
-        : { bg: '#dcfce7', border: '#86efac', color: '#15803d', icon: '✅', msg: `Open · Deadline: ${new Date(window_.closeDate).toLocaleString('en-GH')} (${d} days)` };
-    } else {
-      cfg = { bg: '#dcfce7', border: '#86efac', color: '#15803d', icon: '✅', msg: 'Assessment entry is open.' };
-    }
-    return (
-      <div style={{
-        background: cfg.bg, border: `1px solid ${cfg.border}`,
-        borderRadius: 8, padding: '8px 14px', marginTop: 10,
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: '.82rem', fontWeight: 600, color: cfg.color
-      }}>
-        <span>{cfg.icon}</span>
-        <span>{cfg.msg}</span>
-        {window_.note && <span style={{ fontWeight: 400, marginLeft: 4, opacity: .8 }}>— {window_.note}</span>}
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal-header">
+          <span className="modal-title">Edit Score (Admin)</span>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+        <form onSubmit={handleSave}>
+          <div className="modal-body">
+            {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Class Score</label>
+                <input
+                  type="number" min="0" step="0.5"
+                  value={classScore}
+                  onChange={e => setClassScore(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Exam Score</label>
+                <input
+                  type="number" min="0" step="0.5"
+                  value={examScore}
+                  onChange={e => setExamScore(e.target.value)}
+                />
+              </div>
+              <div className="form-group full">
+                <label>Reason for Change (optional but recommended)</label>
+                <input
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  placeholder="e.g. Data entry error corrected"
+                />
+              </div>
+            </div>
+            <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '10px 14px', fontSize: '.82rem', marginTop: 8 }}>
+              New total: <strong>{(Number(classScore) || 0) + (Number(examScore) || 0)}</strong>
+              &nbsp;· This change will be recorded in the audit log.
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
       </div>
-    );
+    </div>
+  );
+}
+
+// ── MAIN SCORES PAGE ──────────────────────────────────────────────
+
+export default function Scores() {
+  const { school, classes, subjects, schoolId } = useSchool();
+  const { userProfile } = useAuth();
+
+  const isAdmin = userProfile?.role === 'admin';
+
+  const [tab, setTab] = useState(isAdmin ? 'teacher-entry' : 'entry');
+
+  // Teacher entry state
+  const [filters, setFilters] = useState({
+    classId:      '',
+    subjectId:    '',
+    academicYear: school?.academicYear || '',
+    term:         school?.currentTerm  || '1',
+  });
+  const [enrollments,  setEnrollments]  = useState([]);
+  const [students,     setStudents]     = useState([]);
+  const [scores,       setScores]       = useState({});
+  const [deadline,     setDeadline]     = useState(null);
+  const [loading,      setLoading]      = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [entryError,   setEntryError]   = useState('');
+
+  // Admin view state
+  const [allScores,    setAllScores]    = useState([]);
+  const [adminFilters, setAdminFilters] = useState({ academicYear: school?.academicYear || '', term: school?.currentTerm || '1', classId: '', subjectId: '' });
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [editTarget,   setEditTarget]   = useState(null);
+
+  const gradingScale = defaultGradingScale();
+
+  const availableClasses = userProfile?.role === 'teacher'
+    ? classes.filter(() => true) // future: filter by teacher's assigned classes
+    : classes;
+
+  const selectedSubject = subjects.find(s => s.id === filters.subjectId);
+  const maxClass = selectedSubject?.maxClassScore ?? 30;
+  const maxExam  = selectedSubject?.maxExamScore  ?? 70;
+
+  // ── Load teacher entry data + deadline ─────────────────────────
+
+  const loadEntry = useCallback(async () => {
+    if (!filters.classId || !filters.subjectId || !schoolId) return;
+    setLoading(true);
+    setEntryError('');
+    try {
+      const [enrs, studs, existingScores, dl] = await Promise.all([
+        getEnrollments(schoolId, {
+          classId:      filters.classId,
+          academicYear: filters.academicYear,
+          term:         filters.term,
+          status:       'active',
+        }),
+        getStudents(schoolId),
+        getScores(schoolId, {
+          classId:      filters.classId,
+          subjectId:    filters.subjectId,
+          academicYear: filters.academicYear,
+          term:         filters.term,
+        }),
+        getAssessmentDeadline(schoolId, filters.academicYear, filters.term),
+      ]);
+
+      setEnrollments(enrs);
+      setStudents(studs);
+      setDeadline(dl);
+
+      const scoreMap = {};
+      enrs.forEach(e => {
+        const existing = existingScores.find(s => s.enrollmentId === e.id);
+        scoreMap[e.id] = {
+          classScore: existing?.classScore ?? '',
+          examScore:  existing?.examScore  ?? '',
+          total:      existing?.total      ?? 0,
+        };
+      });
+      setScores(scoreMap);
+    } catch (err) {
+      setEntryError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters, schoolId]);
+
+  useEffect(() => { loadEntry(); }, [loadEntry]);
+
+  function updateScore(enrollmentId, field, value) {
+    setScores(prev => {
+      const row   = { ...prev[enrollmentId], [field]: value };
+      const cs    = Number(row.classScore) || 0;
+      const es    = Number(row.examScore)  || 0;
+      const total = Math.min(cs + es, maxClass + maxExam);
+      return { ...prev, [enrollmentId]: { ...row, total } };
+    });
+    setSaved(false);
+    setEntryError('');
   }
+
+  async function handleSave() {
+    if (!filters.classId || !filters.subjectId) {
+      alert('Select class and subject first'); return;
+    }
+
+    // Frontend deadline check before even calling the service
+    if (deadline) {
+      const { allowed, reason } = checkDeadlineStatus(deadline);
+      if (!allowed) {
+        setEntryError(reason);
+        return;
+      }
+    }
+
+    setSaving(true);
+    setEntryError('');
+    try {
+      const batchData = enrollments.map(e => ({
+        enrollmentId: e.id,
+        studentId:    e.studentId,
+        classId:      filters.classId,
+        subjectId:    filters.subjectId,
+        academicYear: filters.academicYear,
+        term:         filters.term,
+        classScore:   Number(scores[e.id]?.classScore) || 0,
+        examScore:    Number(scores[e.id]?.examScore)  || 0,
+      }));
+
+      await saveBatchScores(schoolId, batchData, {
+        userRole:     userProfile?.role,
+        academicYear: filters.academicYear,
+        term:         filters.term,
+      });
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setEntryError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Load admin all-scores view ─────────────────────────────────
+
+  const loadAdminScores = useCallback(async () => {
+    if (!schoolId || !isAdmin) return;
+    setAdminLoading(true);
+    try {
+      const data = await getAllSchoolScores(schoolId, adminFilters);
+      setAllScores(data);
+    } catch (err) {
+      console.error('Failed to load scores:', err);
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [schoolId, adminFilters, isAdmin]);
+
+  useEffect(() => {
+    if (tab === 'admin-view') loadAdminScores();
+  }, [tab, loadAdminScores]);
+
+  async function handleAdminDelete(score) {
+    const reason = window.prompt('Reason for deletion (optional):') ?? '';
+    if (!window.confirm(`Delete score for enrollment ${score.enrollmentId}? This cannot be undone.`)) return;
+    try {
+      await adminDeleteScore(score.id, schoolId, { uid: userProfile.id, email: userProfile.email }, reason);
+      loadAdminScores();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  }
+
+  async function handleAdminApprove(score) {
+    if (!window.confirm('Approve and finalise this assessment record?')) return;
+    try {
+      await adminApproveScore(score.id, schoolId, { uid: userProfile.id, email: userProfile.email });
+      loadAdminScores();
+    } catch (err) {
+      alert('Approve failed: ' + err.message);
+    }
+  }
+
+  const studentMap      = Object.fromEntries(students.map(s => [s.id, s]));
+  const classSubjects   = subjects.filter(s => s.classIds?.includes(filters.classId));
+  const deadlineAllowed = deadline ? checkDeadlineStatus(deadline).allowed : true;
+
+  function getGradeClass(grade) {
+    if (!grade || grade === 'N/A') return '';
+    if (grade.startsWith('A')) return 'grade-A';
+    if (grade.startsWith('B')) return 'grade-B';
+    if (grade.startsWith('C')) return 'grade-C';
+    if (grade.startsWith('D') || grade.startsWith('E')) return 'grade-C';
+    return 'grade-F';
+  }
+
+  const subjectMap = Object.fromEntries(subjects.map(s => [s.id, s]));
+  const classMap   = Object.fromEntries(classes.map(c => [c.id, c]));
 
   return (
     <div>
-      {/* Page Header */}
       <div className="page-header">
-        <div>
-          <h1>Score Entry</h1>
-          <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', marginTop: 2 }}>
-            Enter class and exam scores for students
-          </p>
-        </div>
-        {rows.length > 0 && !entryBlocked && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {dirtyCount > 0 && (
-              <span style={{ fontSize: '.78rem', color: 'var(--warning)', fontWeight: 600 }}>
-                {dirtyCount} unsaved
-              </span>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={saving || dirtyCount === 0}
-              style={{
-                padding: '8px 20px', borderRadius: 8, border: 'none',
-                background: saved ? '#16a34a' : dirtyCount > 0 ? '#0f3460' : '#94a3b8',
-                color: '#fff', fontWeight: 700, fontSize: '.85rem',
-                cursor: dirtyCount > 0 ? 'pointer' : 'not-allowed',
-                fontFamily: 'inherit', transition: 'background .2s'
-              }}
-            >
-              {saving ? 'Saving…' : saved ? '✓ Saved!' : `Save${dirtyCount > 0 ? ` (${dirtyCount})` : ''}`}
+        <h1>Assessment / Score Entry</h1>
+        {isAdmin && (
+          <div className="tabs" style={{ margin: 0 }}>
+            <button className={`tab${tab === 'teacher-entry' ? ' active' : ''}`} onClick={() => setTab('teacher-entry')}>
+              Enter Scores
+            </button>
+            <button className={`tab${tab === 'admin-view' ? ' active' : ''}`} onClick={() => setTab('admin-view')}>
+              All Submissions
             </button>
           </div>
         )}
-      </div>
-
-      {/* Filter card */}
-      <div style={{
-        background: '#fff', border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)', padding: '16px 20px',
-        marginBottom: 14, boxShadow: 'var(--shadow-sm)'
-      }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ minWidth: 175 }}>
-            <label style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--text-mid)' }}>Class</label>
-            <select value={filters.classId}
-              onChange={e => setFilters(f => ({ ...f, classId: e.target.value, subjectId: '' }))}>
-              <option value="">— Select Class —</option>
-              {availableClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div className="form-group" style={{ minWidth: 175 }}>
-            <label style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--text-mid)' }}>Subject</label>
-            <select value={filters.subjectId}
-              onChange={e => setFilters(f => ({ ...f, subjectId: e.target.value }))}
-              disabled={!filters.classId}>
-              <option value="">— Select Subject —</option>
-              {classSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div className="form-group" style={{ minWidth: 120 }}>
-            <label style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--text-mid)' }}>Year</label>
-            <input value={filters.academicYear}
-              onChange={e => setFilters(f => ({ ...f, academicYear: e.target.value }))} />
-          </div>
-          <div className="form-group" style={{ minWidth: 100 }}>
-            <label style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--text-mid)' }}>Term</label>
-            <select value={filters.term} onChange={e => setFilters(f => ({ ...f, term: e.target.value }))}>
-              <option value="1">Term 1</option>
-              <option value="2">Term 2</option>
-              <option value="3">Term 3</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Score limits */}
-        {selectedSubject && (
-          <div style={{
-            display: 'flex', gap: 20, marginTop: 12,
-            paddingTop: 10, borderTop: '1px solid var(--border)',
-            fontSize: '.78rem', color: 'var(--text-mid)', flexWrap: 'wrap'
-          }}>
-            <span>Class Score: <strong style={{ color: 'var(--navy)' }}>0 – {maxCS}</strong></span>
-            <span>Exam Score: <strong style={{ color: 'var(--navy)' }}>0 – {maxES}</strong></span>
-            <span>Total: <strong style={{ color: 'var(--navy)' }}>{maxCS + maxES}</strong></span>
-            {enteredCount > 0 && <span>Entered: <strong style={{ color: 'var(--navy)' }}>{enteredCount}/{rows.length}</strong></span>}
-            {classAvg && <span>Class Avg: <strong style={{ color: 'var(--navy)' }}>{classAvg}%</strong></span>}
-          </div>
+        {(tab === 'teacher-entry' || !isAdmin) && enrollments.length > 0 && deadlineAllowed && (
+          <button
+            onClick={handleSave}
+            className={`btn ${saved ? 'btn-success' : 'btn-primary'}`}
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : saved ? '✓ Saved!' : 'Save All Scores'}
+          </button>
         )}
-
-        <WindowBar />
       </div>
 
-      {/* Blocked banner */}
-      {entryBlocked && (
-        <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca',
-          borderRadius: 8, padding: '12px 16px', marginBottom: 14,
-          display: 'flex', alignItems: 'center', gap: 10,
-          color: '#991b1b', fontSize: '.85rem', fontWeight: 600
-        }}>
-          <span style={{ fontSize: '1.2rem' }}>🔒</span>
-          <span>{deadline.reason}</span>
-        </div>
+      {/* ── TEACHER ENTRY TAB ─────────────────────────────────── */}
+      {(tab === 'teacher-entry' || !isAdmin) && (
+        <>
+          <DeadlineBanner deadline={deadline} />
+
+          {entryError && (
+            <div className="alert alert-danger" style={{ marginBottom: 16 }}>{entryError}</div>
+          )}
+
+          {/* Filters */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="filter-bar">
+              <div className="form-group" style={{ minWidth: 200 }}>
+                <label style={{ fontSize: '.75rem' }}>Class</label>
+                <select
+                  value={filters.classId}
+                  onChange={e => setFilters(f => ({ ...f, classId: e.target.value, subjectId: '' }))}
+                >
+                  <option value="">— Select Class —</option>
+                  {availableClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ minWidth: 200 }}>
+                <label style={{ fontSize: '.75rem' }}>Subject</label>
+                <select
+                  value={filters.subjectId}
+                  onChange={e => setFilters(f => ({ ...f, subjectId: e.target.value }))}
+                  disabled={!filters.classId}
+                >
+                  <option value="">— Select Subject —</option>
+                  {classSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Academic Year</label>
+                <input
+                  value={filters.academicYear}
+                  onChange={e => setFilters(f => ({ ...f, academicYear: e.target.value }))}
+                  style={{ maxWidth: 130 }}
+                />
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Term</label>
+                <select
+                  value={filters.term}
+                  onChange={e => setFilters(f => ({ ...f, term: e.target.value }))}
+                  style={{ maxWidth: 100 }}
+                >
+                  <option value="1">Term 1</option>
+                  <option value="2">Term 2</option>
+                  <option value="3">Term 3</option>
+                </select>
+              </div>
+            </div>
+            {selectedSubject && (
+              <div style={{ fontSize: '.8rem', color: 'var(--text-mid)', marginTop: 8 }}>
+                Max Class Score: <strong>{maxClass}</strong> ·
+                Max Exam Score: <strong>{maxExam}</strong> ·
+                Total: <strong>{maxClass + maxExam}</strong>
+              </div>
+            )}
+          </div>
+
+          {/* Score Table */}
+          <div className="card">
+            {loading ? (
+              <div className="spinner-center"><div className="spinner" /></div>
+            ) : !filters.classId || !filters.subjectId ? (
+              <div className="empty-state">
+                <div className="icon">✏️</div>
+                <p>Select a class and subject to begin entering scores.</p>
+              </div>
+            ) : enrollments.length === 0 ? (
+              <div className="empty-state">
+                <div className="icon">👥</div>
+                <p>No active enrollments in this class/term. Enroll students first.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="score-table score-grid">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Student ID</th>
+                      <th>Student Name</th>
+                      <th>Class Score<br /><span style={{ fontWeight: 400, opacity: .7 }}>/{maxClass}</span></th>
+                      <th>Exam Score<br /><span style={{ fontWeight: 400, opacity: .7 }}>/{maxExam}</span></th>
+                      <th>Total</th>
+                      <th>Grade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enrollments.map((enr, i) => {
+                      const student  = studentMap[enr.studentId];
+                      const row      = scores[enr.id] || { classScore: '', examScore: '', total: 0 };
+                      const cs       = Number(row.classScore) || 0;
+                      const es       = Number(row.examScore)  || 0;
+                      const total    = Math.min(cs + es, maxClass + maxExam);
+                      const gradeInfo = applyGradingScale(total, gradingScale);
+
+                      return (
+                        <tr key={enr.id}>
+                          <td style={{ color: 'var(--text-lt)', width: 32 }}>{i + 1}</td>
+                          <td className="td-mono">{student?.studentCode || '—'}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            {student ? `${student.firstName} ${student.lastName}` : 'Unknown'}
+                          </td>
+                          <td>
+                            <input
+                              type="number" min="0" max={maxClass} step="0.5"
+                              value={row.classScore}
+                              disabled={!deadlineAllowed}
+                              onChange={e => updateScore(enr.id, 'classScore', e.target.value)}
+                              onFocus={e => e.target.select()}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number" min="0" max={maxExam} step="0.5"
+                              value={row.examScore}
+                              disabled={!deadlineAllowed}
+                              onChange={e => updateScore(enr.id, 'examScore', e.target.value)}
+                              onFocus={e => e.target.select()}
+                            />
+                          </td>
+                          <td className="score-total-cell">{(cs || es) ? total : '—'}</td>
+                          <td className={`grade-cell ${getGradeClass(gradeInfo.grade)}`}>
+                            {(cs || es) ? gradeInfo.grade : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      {/* Score Table */}
-      {!filters.classId || !filters.subjectId ? (
-        <div style={{
-          background: '#fff', border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)', padding: '70px 20px',
-          textAlign: 'center', color: 'var(--text-lt)'
-        }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>✏️</div>
-          <p style={{ fontSize: '.9rem' }}>Select a class and subject above to begin entering scores.</p>
-          <p style={{ fontSize: '.8rem', marginTop: 6 }}>Use Tab or Enter to move between cells.</p>
-        </div>
-      ) : loading ? (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 50 }}>
-          <div className="spinner-center"><div className="spinner" /></div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div style={{
-          background: '#fff', border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)', padding: '70px 20px',
-          textAlign: 'center', color: 'var(--text-lt)'
-        }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>👥</div>
-          <p style={{ fontSize: '.9rem' }}>No active enrollments in this class/term. Enroll students first.</p>
-        </div>
-      ) : (
-        <div style={{
-          background: '#fff', border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: 'var(--shadow-sm)', overflow: 'hidden'
-        }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.83rem', minWidth: 640 }}>
-              <thead>
-                <tr>
-                  <th style={{ background: '#0f3460', color: '#fff', padding: '11px 12px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', width: 40, textAlign: 'center' }}>#</th>
-                  <th style={{ background: '#0f3460', color: '#fff', padding: '11px 12px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', width: 100, textAlign: 'left' }}>ID</th>
-                  <th style={{ background: '#0f3460', color: '#fff', padding: '11px 12px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', textAlign: 'left' }}>Student Name</th>
-                  <th style={{ background: '#1a4a7a', color: '#fff', padding: '11px 16px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', textAlign: 'center', width: 130 }}>
-                    Class Score <span style={{ opacity: .7, fontWeight: 400 }}>/{maxCS}</span>
-                  </th>
-                  <th style={{ background: '#1a4a7a', color: '#fff', padding: '11px 16px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', textAlign: 'center', width: 130 }}>
-                    Exam Score <span style={{ opacity: .7, fontWeight: 400 }}>/{maxES}</span>
-                  </th>
-                  <th style={{ background: '#162d52', color: '#fff', padding: '11px 12px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', textAlign: 'center', width: 80 }}>Total</th>
-                  <th style={{ background: '#162d52', color: '#fff', padding: '11px 12px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', textAlign: 'center', width: 70 }}>Grade</th>
-                  <th style={{ background: '#162d52', color: '#fff', padding: '11px 12px', fontWeight: 700, fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.07em', textAlign: 'center', width: 80 }}>Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, i) => {
-                  const student  = studentMap[row.enr.studentId];
-                  const disabled = entryBlocked || row.isFinalized;
-                  const rowBg    = row.isDirty   ? '#fffbeb'
-                                 : row.isApproved ? '#f0fdf4'
-                                 : i % 2 === 0   ? '#ffffff'
-                                 : '#f8fafc';
-                  return (
-                    <tr key={row.enr.id}
-                      style={{ background: rowBg }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#eef2ff'}
-                      onMouseLeave={e => e.currentTarget.style.background = rowBg}
-                    >
-                      <td style={{ padding: '6px 12px', textAlign: 'center', color: '#94a3b8', fontWeight: 600, fontSize: '.78rem', borderBottom: '1px solid #f1f5f9' }}>
-                        {i + 1}
-                      </td>
-                      <td style={{ padding: '6px 12px', fontFamily: 'var(--font-mono)', fontSize: '.74rem', color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
-                        {student?.studentCode || '—'}
-                      </td>
-                      <td style={{ padding: '6px 12px', fontWeight: 600, borderBottom: '1px solid #f1f5f9' }}>
-                        {student ? `${student.firstName} ${student.lastName}` : '—'}
-                      </td>
-
-                      {/* Class Score */}
-                      <td style={{ padding: '4px 8px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>
-                        <input
-                          ref={el => { inputRefs.current[`${row.enr.id}_cs`] = el; }}
-                          type="number" min="0" max={maxCS} step="0.5"
-                          value={row.cs}
-                          disabled={disabled}
-                          onChange={e => updateLocal(row.enr.id, 'cs', e.target.value)}
-                          onFocus={e => e.target.select()}
-                          onKeyDown={e => handleKeyDown(e, i, 'cs')}
-                          style={{
-                            width: 80, textAlign: 'center',
-                            padding: '6px 8px', fontWeight: 700, fontSize: '.85rem',
-                            border: `2px solid ${row.isDirty ? '#f59e0b' : disabled ? '#e2e8f0' : '#e2e8f0'}`,
-                            borderRadius: 6,
-                            background: disabled ? '#f8fafc' : '#fff',
-                            outline: 'none', fontFamily: 'inherit',
-                            cursor: disabled ? 'not-allowed' : 'text',
-                            color: disabled ? '#94a3b8' : '#1e293b',
-                            boxSizing: 'border-box',
-                            transition: 'border-color .15s'
-                          }}
-                          onFocus={e => { e.target.select(); if (!disabled) e.target.style.borderColor = '#0f3460'; }}
-                          onBlur={e => { e.target.style.borderColor = row.isDirty ? '#f59e0b' : '#e2e8f0'; }}
-                        />
-                      </td>
-
-                      {/* Exam Score */}
-                      <td style={{ padding: '4px 8px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>
-                        <input
-                          ref={el => { inputRefs.current[`${row.enr.id}_es`] = el; }}
-                          type="number" min="0" max={maxES} step="0.5"
-                          value={row.es}
-                          disabled={disabled}
-                          onChange={e => updateLocal(row.enr.id, 'es', e.target.value)}
-                          onFocus={e => e.target.select()}
-                          onKeyDown={e => handleKeyDown(e, i, 'es')}
-                          style={{
-                            width: 80, textAlign: 'center',
-                            padding: '6px 8px', fontWeight: 700, fontSize: '.85rem',
-                            border: `2px solid ${row.isDirty ? '#f59e0b' : disabled ? '#e2e8f0' : '#e2e8f0'}`,
-                            borderRadius: 6,
-                            background: disabled ? '#f8fafc' : '#fff',
-                            outline: 'none', fontFamily: 'inherit',
-                            cursor: disabled ? 'not-allowed' : 'text',
-                            color: disabled ? '#94a3b8' : '#1e293b',
-                            boxSizing: 'border-box',
-                            transition: 'border-color .15s'
-                          }}
-                          onFocus={e => { e.target.select(); if (!disabled) e.target.style.borderColor = '#0f3460'; }}
-                          onBlur={e => { e.target.style.borderColor = row.isDirty ? '#f59e0b' : '#e2e8f0'; }}
-                        />
-                      </td>
-
-                      {/* Total */}
-                      <td style={{ padding: '6px 12px', textAlign: 'center', fontWeight: 800, fontSize: '.9rem', borderBottom: '1px solid #f1f5f9',
-                        color: row.total !== null ? '#0f3460' : '#cbd5e1' }}>
-                        {row.total !== null ? row.total : '—'}
-                      </td>
-
-                      {/* Grade */}
-                      <td style={{ padding: '6px 12px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>
-                        {row.gi ? (
-                          <span style={{ fontWeight: 800, fontSize: '.88rem', color: gradeColor(row.gi.grade) }}>
-                            {row.gi.grade}
-                          </span>
-                        ) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                      </td>
-
-                      {/* Remarks */}
-                      <td style={{ padding: '6px 12px', textAlign: 'center', fontSize: '.74rem', color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
-                        {row.gi?.remarks || '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-
-              {/* Footer */}
-              <tfoot>
-                <tr style={{ background: '#f1f5f9', borderTop: '2px solid #e2e8f0' }}>
-                  <td colSpan={3} style={{ padding: '10px 12px', fontWeight: 700, color: '#0f3460', fontSize: '.8rem' }}>
-                    CLASS SUMMARY
-                  </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800, color: '#0f3460' }}>
-                    {rows.filter(r=>r.cs!=='').length > 0
-                      ? (rows.reduce((s,r)=>s+(Number(r.cs)||0),0)/rows.filter(r=>r.cs!=='').length).toFixed(1)
-                      : '—'}
-                  </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800, color: '#0f3460' }}>
-                    {rows.filter(r=>r.es!=='').length > 0
-                      ? (rows.reduce((s,r)=>s+(Number(r.es)||0),0)/rows.filter(r=>r.es!=='').length).toFixed(1)
-                      : '—'}
-                  </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800, color: '#0f3460' }}>
-                    {classAvg || '—'}
-                  </td>
-                  <td colSpan={2} style={{ padding: '10px 12px', fontSize: '.74rem', color: '#64748b' }}>
-                    {enteredCount}/{rows.length} entered · {rows.filter(r=>r.isApproved).length} approved
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+      {/* ── ADMIN ALL-SCORES TAB ──────────────────────────────── */}
+      {tab === 'admin-view' && isAdmin && (
+        <>
+          {/* Admin filters */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="filter-bar">
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Academic Year</label>
+                <input
+                  value={adminFilters.academicYear}
+                  onChange={e => setAdminFilters(f => ({ ...f, academicYear: e.target.value }))}
+                  style={{ maxWidth: 130 }}
+                />
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Term</label>
+                <select
+                  value={adminFilters.term}
+                  onChange={e => setAdminFilters(f => ({ ...f, term: e.target.value }))}
+                  style={{ maxWidth: 100 }}
+                >
+                  <option value="">All</option>
+                  <option value="1">Term 1</option>
+                  <option value="2">Term 2</option>
+                  <option value="3">Term 3</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Class</label>
+                <select
+                  value={adminFilters.classId}
+                  onChange={e => setAdminFilters(f => ({ ...f, classId: e.target.value }))}
+                  style={{ minWidth: 180 }}
+                >
+                  <option value="">All Classes</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Subject</label>
+                <select
+                  value={adminFilters.subjectId}
+                  onChange={e => setAdminFilters(f => ({ ...f, subjectId: e.target.value }))}
+                  style={{ minWidth: 180 }}
+                >
+                  <option value="">All Subjects</option>
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <button onClick={loadAdminScores} className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}>
+                ↻ Refresh
+              </button>
+            </div>
           </div>
 
-          {/* Sticky save bar when there are changes */}
-          {dirtyCount > 0 && !entryBlocked && (
-            <div style={{
-              background: 'linear-gradient(90deg, #fffbeb, #fef3c7)',
-              borderTop: '2px solid #fde68a',
-              padding: '10px 20px',
-              display: 'flex', alignItems: 'center', gap: 14
-            }}>
-              <span style={{ fontSize: '.83rem', color: '#92400e', fontWeight: 600 }}>
-                ✏️ {dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}
-              </span>
-              <button onClick={() => { setLocalScores({}); setSaved(false); }}
-                style={{ padding: '5px 14px', borderRadius: 6, border: '1px solid #d97706', background: 'transparent', color: '#92400e', fontWeight: 600, cursor: 'pointer', fontSize: '.8rem', fontFamily: 'inherit' }}>
-                Discard
-              </button>
-              <button onClick={handleSave} disabled={saving}
-                style={{ padding: '7px 20px', borderRadius: 6, border: 'none', background: '#0f3460', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '.84rem', fontFamily: 'inherit', opacity: saving ? .7 : 1 }}>
-                {saving ? 'Saving…' : 'Save All Changes'}
-              </button>
-              <span style={{ marginLeft: 'auto', fontSize: '.74rem', color: '#92400e', opacity: .7 }}>
-                Press Tab/Enter to move between cells
-              </span>
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">All Submitted Assessments ({allScores.length})</span>
             </div>
-          )}
-        </div>
+
+            {adminLoading ? (
+              <div className="spinner-center"><div className="spinner" /></div>
+            ) : allScores.length === 0 ? (
+              <div className="empty-state">
+                <div className="icon">📋</div>
+                <p>No assessment records found for the selected filters.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Class</th>
+                      <th>Subject</th>
+                      <th>Enrollment</th>
+                      <th>Class Score</th>
+                      <th>Exam Score</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allScores.map(score => {
+                      const cls     = classMap[score.classId];
+                      const subj    = subjectMap[score.subjectId];
+                      const grade   = applyGradingScale(score.total || 0, gradingScale);
+                      return (
+                        <tr key={score.id} style={{ opacity: score.isFinalized ? .75 : 1 }}>
+                          <td style={{ fontSize: '.82rem' }}>{cls?.name || score.classId}</td>
+                          <td style={{ fontSize: '.82rem' }}>{subj?.name || score.subjectId}</td>
+                          <td className="td-mono" style={{ fontSize: '.75rem' }}>{score.enrollmentId?.substring(0, 12)}…</td>
+                          <td>{score.classScore ?? '—'}</td>
+                          <td>{score.examScore  ?? '—'}</td>
+                          <td style={{ fontWeight: 700 }}>
+                            {score.total ?? '—'}
+                            <span style={{ marginLeft: 6, fontSize: '.75rem', color: 'var(--text-lt)' }}>
+                              ({grade.grade})
+                            </span>
+                          </td>
+                          <td>
+                            {score.isFinalized ? (
+                              <span className="badge badge-success">Approved</span>
+                            ) : (
+                              <span className="badge badge-warning">Pending</span>
+                            )}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {!score.isFinalized && (
+                                <>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => setEditTarget(score)}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className="btn btn-success btn-sm"
+                                    onClick={() => handleAdminApprove(score)}
+                                  >
+                                    Approve
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => handleAdminDelete(score)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Edit Modal */}
+      {editTarget && (
+        <AdminEditModal
+          score={editTarget}
+          schoolId={schoolId}
+          userProfile={userProfile}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => { setEditTarget(null); loadAdminScores(); }}
+        />
       )}
     </div>
   );
