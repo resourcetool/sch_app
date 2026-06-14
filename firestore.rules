@@ -1,11 +1,6 @@
 // firestore.rules
-// CHANGED: Full rewrite — requirement #7
-// - Super admin full access to SA collections
-// - Multiple SA emails via custom claims (or email list in env)
-// - Deadline enforcement for score writes
-// - Assessment window management for admins
-// - Audit log — append only, admin can read
-// Deploy with: firebase deploy --only firestore:rules
+// FIXED: Removed if statements from withinDeadline function —
+//        Firestore rules only allow ternary expressions, not if/else blocks
 
 rules_version = '2';
 service cloud.firestore {
@@ -25,16 +20,6 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function userRole() {
-      return isAuth() ? userDoc().role : null;
-    }
-
-    function userSchool() {
-      return isAuth() ? userDoc().schoolId : null;
-    }
-
-    // Super admin — stored in custom claim OR role field
-    // Custom claim is set server-side; role field is the client fallback
     function isSuperAdmin() {
       return isAuth() && (
         request.auth.token.superAdmin == true ||
@@ -48,6 +33,10 @@ service cloud.firestore {
 
     function isTeacher() {
       return isAuth() && userDoc().role == 'teacher';
+    }
+
+    function userSchoolId() {
+      return isAuth() ? userDoc().schoolId : '';
     }
 
     function inSchool(schoolId) {
@@ -66,32 +55,47 @@ service cloud.firestore {
       return isAdminOf(schoolId) || isTeacherOf(schoolId);
     }
 
-    // Deadline check — reads the assessment window doc
+    // ── DEADLINE CHECK ────────────────────────────────────────────
+    // Checks subject-specific window, falls back to class-wide window.
+    // Returns true (open) when no window is configured.
+    // Uses only boolean expressions — no if/else allowed in rules functions.
+
+    function windowIsOpen(windowData) {
+      return
+        windowData.isLocked != true &&
+        (
+          !('openDate'  in windowData) ||
+          windowData.openDate  == null ||
+          request.time.toMillis() >= windowData.openDate
+        ) &&
+        (
+          !('closeDate' in windowData) ||
+          windowData.closeDate == null ||
+          request.time.toMillis() <= windowData.closeDate
+        );
+    }
+
     function withinDeadline(schoolId, classId, academicYear, term, subjectId) {
-      let windowId = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_' + subjectId;
-      let classWindowId = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_all';
+      let subjectWindowId = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_' + subjectId;
+      let classWindowId   = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_all';
 
-      let subWindow  = exists(/databases/$(database)/documents/assessmentWindows/$(windowId))
-                       ? get(/databases/$(database)/documents/assessmentWindows/$(windowId)).data
-                       : null;
-      let classWindow = exists(/databases/$(database)/documents/assessmentWindows/$(classWindowId))
-                        ? get(/databases/$(database)/documents/assessmentWindows/$(classWindowId)).data
-                        : null;
+      let hasSubjectWindow = exists(/databases/$(database)/documents/assessmentWindows/$(subjectWindowId));
+      let hasClassWindow   = exists(/databases/$(database)/documents/assessmentWindows/$(classWindowId));
 
-      let window = subWindow != null ? subWindow : classWindow;
-
-      // No window configured = open
-      if (window == null) { return true; }
-
-      // Locked = closed
-      if (window.isLocked == true) { return false; }
-
-      // Check open/close dates
-      let now = request.time.toMillis();
-      if ('openDate' in window && now < window.openDate) { return false; }
-      if ('closeDate' in window && now > window.closeDate) { return false; }
-
-      return true;
+      // No window at all — entry is open
+      // Subject window takes priority over class window
+      return
+        (!hasSubjectWindow && !hasClassWindow) ||
+        (hasSubjectWindow &&
+          windowIsOpen(
+            get(/databases/$(database)/documents/assessmentWindows/$(subjectWindowId)).data
+          )
+        ) ||
+        (!hasSubjectWindow && hasClassWindow &&
+          windowIsOpen(
+            get(/databases/$(database)/documents/assessmentWindows/$(classWindowId)).data
+          )
+        );
     }
 
     // ── SCHOOLS ──────────────────────────────────────────────────
@@ -107,7 +111,7 @@ service cloud.firestore {
       allow read: if isAuth() && (
         uid() == userId ||
         isSuperAdmin() ||
-        (isAdmin() && resource.data.schoolId == userSchool())
+        (isAdmin() && resource.data.schoolId == userSchoolId())
       );
       allow create: if isAuth();
       allow update: if isAuth() && (
@@ -162,8 +166,7 @@ service cloud.firestore {
     match /scores/{scoreId} {
       allow read: if isSuperAdmin() || isMemberOf(resource.data.schoolId);
 
-      // Teachers: only write within deadline AND for assigned classes/subjects
-      allow create: if (
+      allow create: if
         isSuperAdmin() ||
         isAdminOf(request.resource.data.schoolId) ||
         (
@@ -177,16 +180,15 @@ service cloud.firestore {
             request.resource.data.term,
             request.resource.data.subjectId
           )
-        )
-      );
+        );
 
-      allow update: if (
+      allow update: if
         isSuperAdmin() ||
         isAdminOf(resource.data.schoolId) ||
         (
           isTeacherOf(resource.data.schoolId) &&
-          !resource.data.isFinalized &&
-          !resource.data.isApproved &&
+          resource.data.isFinalized  != true &&
+          resource.data.isApproved   != true &&
           withinDeadline(
             resource.data.schoolId,
             resource.data.classId,
@@ -194,10 +196,8 @@ service cloud.firestore {
             resource.data.term,
             resource.data.subjectId
           )
-        )
-      );
+        );
 
-      // Only admins and SA can delete (soft delete)
       allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
@@ -206,7 +206,7 @@ service cloud.firestore {
       allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
       allow update: if (isSuperAdmin() || isAdminOf(resource.data.schoolId))
-                    && !resource.data.isFinalized;
+                       && resource.data.isFinalized != true;
       allow delete: if false;
     }
 
@@ -214,7 +214,7 @@ service cloud.firestore {
     match /promotions/{promotionId} {
       allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
-      allow update: if false; // immutable
+      allow update: if false;
       allow delete: if false;
     }
 
@@ -227,7 +227,6 @@ service cloud.firestore {
     }
 
     // ── ASSESSMENT WINDOWS ────────────────────────────────────────
-    // Requirement #4 — admin sets open/close/lock dates
     match /assessmentWindows/{windowId} {
       allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
@@ -236,16 +235,14 @@ service cloud.firestore {
     }
 
     // ── SCORE AUDIT LOG ───────────────────────────────────────────
-    // Requirement #6 — append-only, admin read, nobody can edit/delete
     match /scoreAuditLog/{logId} {
       allow read:   if isSuperAdmin() || isAdminOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
-      allow update: if false; // immutable audit trail
+      allow update: if false;
       allow delete: if false;
     }
 
     // ── SUBSCRIPTIONS ─────────────────────────────────────────────
-    // Requirement #7 — Super admin full access
     match /subscriptions/{schoolId} {
       allow read:   if isSuperAdmin() || (isAuth() && userDoc().schoolId == schoolId);
       allow create: if isSuperAdmin();
@@ -254,18 +251,16 @@ service cloud.firestore {
     }
 
     // ── REGISTRATION CODES ────────────────────────────────────────
-    // Requirement #7 — Super admin full access
     match /registrationCodes/{codeId} {
-      allow read:   if isSuperAdmin() || isAuth(); // anyone authenticated can validate a code
+      allow read:   if isAuth();
       allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin() || isAuth(); // marking code as used on registration
+      allow update: if isSuperAdmin() || isAuth();
       allow delete: if isSuperAdmin();
     }
 
     // ── ACCESS REQUESTS ───────────────────────────────────────────
-    // Requirement #2, #7 — Super admin full access, public can create
     match /accessRequests/{requestId} {
-      allow create: if true;  // public form — no auth required
+      allow create: if true;
       allow read:   if isSuperAdmin();
       allow update: if isSuperAdmin();
       allow delete: if isSuperAdmin();
@@ -279,7 +274,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── DEFAULT: DENY ALL ─────────────────────────────────────────
+    // ── DEFAULT DENY ──────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
