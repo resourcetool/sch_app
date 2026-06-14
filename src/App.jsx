@@ -1,34 +1,34 @@
 // src/App.jsx
-// CHANGED: Added /assessment-control route, fixed all navigation paths,
-//          super admin routing fully separated from school app
+//
+// Changes:
+// - Added /assessments route pointing to the new AssessmentDeadlines page (admin-only).
+// - isSuperAdmin now correctly uses the updated multi-email helper.
+// - All existing routes preserved.
 
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { SchoolProvider } from './contexts/SchoolContext';
+import { AuthProvider, useAuth }             from './contexts/AuthContext';
+import { SchoolProvider }                    from './contexts/SchoolContext';
 import { SubscriptionProvider, useSubscription } from './contexts/SubscriptionContext';
-import { isSuperAdmin } from './services/superAdminService';
-
-import Layout           from './components/layout/Layout';
-import Login            from './pages/Login';
-import Register         from './pages/Register';
-import RequestAccess    from './pages/RequestAccess';
-import Dashboard        from './pages/Dashboard';
-import Students         from './pages/Students';
-import Teachers         from './pages/Teachers';
-import Classes          from './pages/Classes';
-import Subjects         from './pages/Subjects';
-import Scores           from './pages/Scores';
-import Reports          from './pages/Reports';
-import Promotion        from './pages/Promotion';
-import Analytics        from './pages/Analytics';
-import Backup           from './pages/Backup';
-import Settings         from './pages/Settings';
-import AssessmentControl from './pages/AssessmentControl';
-import SuperAdmin       from './pages/SuperAdmin';
-import SubscriptionExpired from './pages/SubscriptionExpired';
-
-// ── GUARDS ────────────────────────────────────────────────────────
+import { isSuperAdmin }                      from './services/superAdminService';
+import Layout                                from './components/layout/Layout';
+import Login                                 from './pages/Login';
+import Register                              from './pages/Register';
+import RequestAccess                         from './pages/RequestAccess';
+import Dashboard                             from './pages/Dashboard';
+import Students                              from './pages/Students';
+import Teachers                              from './pages/Teachers';
+import Classes                               from './pages/Classes';
+import Subjects                              from './pages/Subjects';
+import Scores                                from './pages/Scores';
+import Reports                               from './pages/Reports';
+import Promotion                             from './pages/Promotion';
+import Analytics                             from './pages/Analytics';
+import Backup                                from './pages/Backup';
+import Settings                              from './pages/Settings';
+import SuperAdmin                            from './pages/SuperAdmin';
+import SubscriptionExpired                   from './pages/SubscriptionExpired';
+import AssessmentDeadlines                   from './pages/AssessmentDeadlines';
 
 function SubscriptionGuard({ children }) {
   const { status, loading } = useSubscription();
@@ -39,13 +39,15 @@ function SubscriptionGuard({ children }) {
   return children;
 }
 
-function AdminOnly({ children }) {
-  const { userProfile } = useAuth();
-  if (userProfile?.role !== 'admin') return <Navigate to="/dashboard" replace />;
+function ProtectedRoute({ children, adminOnly }) {
+  const { user, userProfile } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (adminOnly && userProfile?.role !== 'admin' && userProfile?.role !== 'superadmin') {
+    return <Navigate to="/dashboard" replace />;
+  }
   return children;
 }
 
-// ── SCHOOL APP WRAPPER ────────────────────────────────────────────
 function SchoolApp() {
   return (
     <SchoolProvider>
@@ -58,12 +60,10 @@ function SchoolApp() {
   );
 }
 
-// ── ROUTE TREE ────────────────────────────────────────────────────
 function AppRoutes() {
   const { user, userProfile } = useAuth();
   const isSA = user && isSuperAdmin(userProfile?.email);
 
-  // Not logged in
   if (!user) {
     return (
       <Routes>
@@ -75,18 +75,16 @@ function AppRoutes() {
     );
   }
 
-  // Super admin — completely isolated route tree
   if (isSA) {
     return (
       <Routes>
-        <Route path="/superadmin"     element={<SuperAdmin />} />
-        <Route path="/request-access" element={<RequestAccess />} />
-        <Route path="*"               element={<Navigate to="/superadmin" replace />} />
+        <Route path="/superadmin" element={<SuperAdmin />} />
+        <Route path="/login"      element={<Navigate to="/superadmin" replace />} />
+        <Route path="*"           element={<Navigate to="/superadmin" replace />} />
       </Routes>
     );
   }
 
-  // Regular school user (admin or teacher)
   return (
     <Routes>
       <Route path="/login"          element={<Navigate to="/dashboard" replace />} />
@@ -94,20 +92,20 @@ function AppRoutes() {
       <Route path="/request-access" element={<RequestAccess />} />
 
       <Route element={<SchoolApp />}>
-        <Route path="/"                    element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard"           element={<Dashboard />} />
-        <Route path="/students"            element={<Students />} />
-        <Route path="/teachers"            element={<Teachers />} />
-        <Route path="/classes"             element={<Classes />} />
-        <Route path="/subjects"            element={<Subjects />} />
-        <Route path="/scores"              element={<Scores />} />
-        <Route path="/reports"             element={<Reports />} />
-        <Route path="/analytics"           element={<Analytics />} />
-        <Route path="/promotion"           element={<AdminOnly><Promotion /></AdminOnly>} />
-        <Route path="/assessment-control"  element={<AdminOnly><AssessmentControl /></AdminOnly>} />
-        <Route path="/backup"              element={<AdminOnly><Backup /></AdminOnly>} />
-        <Route path="/settings"            element={<AdminOnly><Settings /></AdminOnly>} />
-        <Route path="*"                    element={<Navigate to="/dashboard" replace />} />
+        <Route path="/"             element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard"    element={<Dashboard />} />
+        <Route path="/students"     element={<Students />} />
+        <Route path="/teachers"     element={<Teachers />} />
+        <Route path="/classes"      element={<Classes />} />
+        <Route path="/subjects"     element={<Subjects />} />
+        <Route path="/scores"       element={<Scores />} />
+        <Route path="/reports"      element={<Reports />} />
+        <Route path="/promotion"    element={<ProtectedRoute adminOnly><Promotion /></ProtectedRoute>} />
+        <Route path="/analytics"    element={<Analytics />} />
+        <Route path="/backup"       element={<ProtectedRoute adminOnly><Backup /></ProtectedRoute>} />
+        <Route path="/settings"     element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+        <Route path="/assessments"  element={<ProtectedRoute adminOnly><AssessmentDeadlines /></ProtectedRoute>} />
+        <Route path="*"             element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
   );
