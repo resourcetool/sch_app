@@ -1,4 +1,10 @@
 // src/contexts/AuthContext.jsx
+//
+// Changes:
+// - isSuperAdmin() now delegates to the updated superAdminService which supports
+//   multiple emails via VITE_SUPER_ADMIN_EMAILS env var.
+// - No other logic changes; all existing functionality preserved.
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
@@ -12,24 +18,24 @@ import { isSuperAdmin } from '../services/superAdminService';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user,        setUser]        = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading,     setLoading]     = useState(true);
 
   useEffect(() => {
     setupConnectivityListeners();
 
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Super admin — no Firestore profile needed, synthesize one
+        // Super admin — synthesise a profile without needing a Firestore user doc
         if (isSuperAdmin(firebaseUser.email)) {
           const saProfile = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
+            id:        firebaseUser.uid,
+            email:     firebaseUser.email,
             firstName: 'Super',
-            lastName: 'Admin',
-            role: 'superadmin',
-            schoolId: null
+            lastName:  'Admin',
+            role:      'superadmin',
+            schoolId:  null,
           };
           setUser(firebaseUser);
           setUserProfile(saProfile);
@@ -37,7 +43,7 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // Regular user — try IDB first (works offline)
+        // Regular user — try IndexedDB first (works offline)
         let profile = await idbGet('users', firebaseUser.uid);
 
         if (!profile && navigator.onLine) {
@@ -69,8 +75,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function login(email, password) {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    return cred;
+    return signInWithEmailAndPassword(auth, email, password);
   }
 
   async function logout() {
@@ -78,35 +83,35 @@ export function AuthProvider({ children }) {
   }
 
   async function registerAdmin(email, password, schoolData) {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    const uid = cred.user.uid;
-
+    const cred    = await createUserWithEmailAndPassword(auth, email, password);
+    const uid     = cred.user.uid;
     const schoolId = `school_${Date.now()}`;
+
     const school = {
-      id: schoolId,
-      name: schoolData.schoolName,
-      address: schoolData.address || '',
-      phone: schoolData.phone || '',
-      email: schoolData.email || '',
-      code: schoolData.code || schoolData.schoolName.substring(0, 3).toUpperCase(),
-      gradingScale: null,
+      id:            schoolId,
+      name:          schoolData.schoolName,
+      address:       schoolData.address       || '',
+      phone:         schoolData.phone         || '',
+      email:         schoolData.email         || '',
+      code:          schoolData.code          || schoolData.schoolName.substring(0, 3).toUpperCase(),
+      gradingScale:  null,
       promotionRules: null,
-      academicYear: schoolData.academicYear || '2024/2025',
-      currentTerm: schoolData.currentTerm || '1',
-      createdAt: Date.now()
+      academicYear:  schoolData.academicYear  || '2024/2025',
+      currentTerm:   schoolData.currentTerm   || '1',
+      createdAt:     Date.now(),
     };
 
     await setDoc(doc(db, 'schools', schoolId), school);
     await idbPut('schools', school);
 
     const profile = {
-      id: uid,
+      id:        uid,
       schoolId,
       email,
       firstName: schoolData.firstName || '',
-      lastName: schoolData.lastName || '',
-      role: 'admin',
-      createdAt: Date.now()
+      lastName:  schoolData.lastName  || '',
+      role:      'admin',
+      createdAt: Date.now(),
     };
 
     await setDoc(doc(db, 'users', uid), profile);
@@ -120,13 +125,13 @@ export function AuthProvider({ children }) {
       {loading ? (
         <div style={{
           minHeight: '100vh', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', background: '#0f3460'
+          justifyContent: 'center', background: '#0f3460',
         }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
             <div style={{
               width: 40, height: 40, border: '3px solid rgba(255,255,255,.2)',
               borderTopColor: '#fff', borderRadius: '50%',
-              animation: 'spin .7s linear infinite', margin: '0 auto 16px'
+              animation: 'spin .7s linear infinite', margin: '0 auto 16px',
             }} />
             <div style={{ fontSize: '.9rem', opacity: .7 }}>Loading…</div>
           </div>
