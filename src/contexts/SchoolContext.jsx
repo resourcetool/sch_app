@@ -83,8 +83,28 @@ export function SchoolProvider({ children }) {
 
   const subjectsForUser = useMemo(() => {
     if (!teacherProfile) return subjects; // admin sees all
+    // Include subjects the teacher is directly assigned to
     return subjects.filter(s => teacherProfile.assignedSubjects?.includes(s.id));
   }, [subjects, teacherProfile]);
+
+  /**
+   * Given a classId, returns subjects for the current user that belong to that class.
+   * Checks BOTH directions:
+   *   1. subject.classIds includes classId  (set from Subjects page)
+   *   2. class.subjectIds includes subject.id (set from Classes page)
+   * This handles the case where subjects were added without assigning classes yet.
+   */
+  function getSubjectsForClass(classId) {
+    const cls        = classes.find(c => c.id === classId);
+    const allSubjects = teacherProfile
+      ? subjects.filter(s => teacherProfile.assignedSubjects?.includes(s.id))
+      : subjects;
+    if (!classId) return allSubjects;
+    return allSubjects.filter(s =>
+      s.classIds?.includes(classId) ||
+      cls?.subjectIds?.includes(s.id)
+    );
+  }
 
   return (
     <SchoolContext.Provider value={{
@@ -93,6 +113,7 @@ export function SchoolProvider({ children }) {
       teacherProfile,
       classesForUser,
       subjectsForUser,
+      getSubjectsForClass,
     }}>
       {children}
     </SchoolContext.Provider>
