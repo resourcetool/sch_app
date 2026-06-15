@@ -283,7 +283,7 @@ function ExcelScoreGrid({ enrollments, students, scores, setScores, maxClass, ma
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────
 export default function Scores() {
-  const { school, classes, subjects, schoolId, classesForUser, subjectsForUser, teacherProfile } = useSchool();
+  const { school, classes, subjects, schoolId, classesForUser, subjectsForUser, getSubjectsForClass, teacherProfile } = useSchool();
   // Teachers only see their assigned classes/subjects; admins see all
   const availableClasses  = classesForUser;
   const availableSubjects = subjectsForUser;
@@ -312,10 +312,12 @@ export default function Scores() {
   const [editTarget,   setEditTarget]   = useState(null);
 
   const gradingScale    = (school?.gradingScale?.length ? school.gradingScale : null) || defaultGradingScale();
-  const selectedSubject = subjects.find(s => s.id === filters.subjectId);
+  const selectedSubject = subjects.find(s => s.id === filters.subjectId); // use full subjects list for score weights
   const maxClass        = selectedSubject?.maxClassScore ?? 30;
   const maxExam         = selectedSubject?.maxExamScore  ?? 70;
-  const classSubjects   = availableSubjects.filter(s => s.classIds?.includes(filters.classId));
+  // getSubjectsForClass checks BOTH directions (subject.classIds AND class.subjectIds)
+  // so subjects show up regardless of which page was used to create/assign them.
+  const classSubjects = getSubjectsForClass(filters.classId);
 
   const deadlineAllowed = deadline ? checkDeadlineStatus(deadline).allowed : true;
   const inputDisabled   = !deadlineAllowed && !isAdmin;
