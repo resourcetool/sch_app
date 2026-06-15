@@ -92,6 +92,7 @@ function AppRoutes() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/scores"    element={<Scores />} />
           <Route path="/reports"   element={<Reports />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="*"          element={<Navigate to="/scores" replace />} />
         </Route>
       </Routes>
