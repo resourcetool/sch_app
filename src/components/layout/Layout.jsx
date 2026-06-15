@@ -11,24 +11,35 @@ import { useSchool }       from '../../contexts/SchoolContext';
 import { useSubscription } from '../../contexts/SubscriptionContext';
 import { onSyncStatusChange } from '../../services/syncService';
 
-const NAV = [
+// Full nav for admins
+const ADMIN_NAV = [
   { section: 'Overview' },
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard'   },
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard'  },
   { section: 'Academic' },
-  { to: '/students',    icon: '👥', label: 'Students'    },
-  { to: '/teachers',    icon: '👨‍🏫', label: 'Teachers'    },
-  { to: '/classes',     icon: '🏫', label: 'Classes'     },
-  { to: '/subjects',    icon: '📚', label: 'Subjects'    },
-  { to: '/scores',      icon: '✏️', label: 'Score Entry'  },
+  { to: '/students',    icon: '👥', label: 'Students'   },
+  { to: '/teachers',    icon: '👨‍🏫', label: 'Teachers'   },
+  { to: '/classes',     icon: '🏫', label: 'Classes'    },
+  { to: '/subjects',    icon: '📚', label: 'Subjects'   },
+  { to: '/scores',      icon: '✏️', label: 'Score Entry' },
   { section: 'Results' },
-  { to: '/reports',     icon: '📄', label: 'Reports'     },
-  { to: '/promotion',   icon: '🚀', label: 'Promotion',   adminOnly: true },
-  { to: '/analytics',   icon: '📈', label: 'Analytics',   feature: 'analytics' },
+  { to: '/reports',     icon: '📄', label: 'Reports'    },
+  { to: '/promotion',   icon: '🚀', label: 'Promotion'  },
+  { to: '/analytics',   icon: '📈', label: 'Analytics', feature: 'analytics' },
   { section: 'Admin' },
-  { to: '/assessments', icon: '📅', label: 'Deadlines',   adminOnly: true },
-  { to: '/backup',      icon: '💾', label: 'Backup',      adminOnly: true, feature: 'backup' },
-  { to: '/settings',    icon: '⚙️', label: 'Settings',    adminOnly: true },
+  { to: '/assessments', icon: '📅', label: 'Deadlines'  },
+  { to: '/backup',      icon: '💾', label: 'Backup',    feature: 'backup' },
+  { to: '/settings',    icon: '⚙️', label: 'Settings'   },
 ];
+
+// Restricted nav for teachers — score entry only
+const TEACHER_NAV = [
+  { section: 'My Work' },
+  { to: '/dashboard', icon: '📊', label: 'Dashboard'  },
+  { to: '/scores',    icon: '✏️', label: 'Score Entry' },
+  { to: '/reports',   icon: '📄', label: 'Reports'    },
+];
+
+const NAV = ADMIN_NAV; // default; actual selection done below
 
 export default function Layout() {
   const { userProfile, logout } = useAuth();
@@ -48,7 +59,9 @@ export default function Layout() {
     navigate('/login');
   }
 
-  const isAdmin = userProfile?.role === 'admin';
+  const isAdmin   = userProfile?.role === 'admin';
+  const isTeacher = userProfile?.role === 'teacher';
+  const NAV_ITEMS = isTeacher ? TEACHER_NAV : ADMIN_NAV;
 
   const syncInfo = {
     synced:  { label: '● Synced',   cls: 'synced'  },
@@ -104,7 +117,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: '6px 0', overflowY: 'auto' }}>
-          {NAV.map((item, i) => {
+          {NAV_ITEMS.map((item, i) => {
             if (item.section) {
               return (
                 <div key={i} className="sidebar-section">
@@ -112,7 +125,7 @@ export default function Layout() {
                 </div>
               );
             }
-            if (item.adminOnly && !isAdmin) return null;
+            if (item.adminOnly && !isAdmin && !isTeacher) return null;
             const locked = item.feature && !can(item.feature);
 
             return (
