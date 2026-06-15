@@ -31,12 +31,13 @@ const ADMIN_NAV = [
   { to: '/settings',    icon: '⚙️', label: 'Settings'   },
 ];
 
-// Restricted nav for teachers — score entry only
+// Restricted nav for teachers
 const TEACHER_NAV = [
   { section: 'My Work' },
   { to: '/dashboard', icon: '📊', label: 'Dashboard'  },
   { to: '/scores',    icon: '✏️', label: 'Score Entry' },
   { to: '/reports',   icon: '📄', label: 'Reports'    },
+  { to: '/analytics', icon: '📈', label: 'Analytics'  },
 ];
 
 const NAV = ADMIN_NAV; // default; actual selection done below
