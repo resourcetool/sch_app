@@ -120,7 +120,11 @@ function ExcelScoreGrid({ enrollments, students, scores, setScores, maxClass, ma
 
   function updateScore(enrollmentId, field, value) {
     setScores(prev => {
-      const row = { ...prev[enrollmentId], [field]: value };
+      // Clamp to max before storing — prevents scores exceeding the allowed max
+      const clampedValue = value === '' ? '' : Math.min(Math.max(0, Number(value)),
+        field === 'classScore' ? maxClass : maxExam
+      );
+      const row = { ...prev[enrollmentId], [field]: clampedValue };
       const cs  = Number(row.classScore) || 0;
       const es  = Number(row.examScore)  || 0;
       return { ...prev, [enrollmentId]: { ...row, total: Math.min(cs + es, total) } };

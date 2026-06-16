@@ -11,9 +11,9 @@ import { useSchool }    from '../contexts/SchoolContext';
 import { v4 as uuidv4 } from 'uuid';
 import { writeRecord }  from '../services/syncService';
 import { idbGetAll }    from '../services/indexedDB';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db }     from '../services/firebase';
+import { createTeacherAccount } from '../services/teacherAuthService';
+import { doc, setDoc }            from 'firebase/firestore';
+import { db }                     from '../services/firebase';
 
 // ── EDIT MODAL ────────────────────────────────────────────────────
 function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave }) {
@@ -203,18 +203,14 @@ export default function Teachers() {
     if (!editing) {
       if (!form.email || !form.password) throw new Error('Email and password are required to create a teacher account.');
       try {
-        const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
-        await setDoc(doc(db, 'users', cred.user.uid), {
-          id:         cred.user.uid,
+        // Uses secondary Firebase app so admin stays logged in
+        await createTeacherAccount(form.email, form.password, {
           schoolId,
-          email:      form.email,
-          firstName:  form.firstName,
-          lastName:   form.lastName,
-          role:       'teacher',
-          teacherId:  id,
+          firstName:        form.firstName,
+          lastName:         form.lastName,
+          teacherId:        id,
           assignedClasses:  form.assignedClasses  || [],
           assignedSubjects: form.assignedSubjects || [],
-          createdAt:  Date.now(),
         });
       } catch (err) {
         if (err.code === 'auth/email-already-in-use') throw new Error('This email is already registered. Ask the teacher to log in instead.');
