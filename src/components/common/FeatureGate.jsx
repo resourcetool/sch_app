@@ -44,7 +44,7 @@ export default function FeatureGate({ feature, children, fallback }) {
       </p>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
         <a
-          href="https://wa.me/233240000000"
+          href="https://wa.me/233549271528"
           target="_blank"
           rel="noreferrer"
           style={{
@@ -60,7 +60,7 @@ export default function FeatureGate({ feature, children, fallback }) {
           📱 WhatsApp to Upgrade
         </a>
         <a
-          href="tel:+233240000000"
+          href="tel:+233549271528"
           style={{
             background: 'var(--navy)',
             color: '#fff',
