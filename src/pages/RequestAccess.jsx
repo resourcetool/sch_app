@@ -69,16 +69,16 @@ export default function RequestAccess() {
                 textDecoration: 'none', marginBottom: 8,
               }}
             >
-              📱 WhatsApp: 024XXXXXXX
+              📱 WhatsApp: 0549271528
             </a>
             <a
-              href="tel:+233240000000"
+              href="tel:+233549271528"
               style={{
                 display: 'block', background: 'var(--navy)', color: '#fff',
                 padding: '10px 20px', borderRadius: 8, fontWeight: 700, textDecoration: 'none',
               }}
             >
-              📞 Call: 024XXXXXXX
+              📞 Call: 0549271528
             </a>
           </div>
           <Link to="/login" style={{ color: 'var(--navy)', fontSize: '.84rem' }}>← Back to Login</Link>
