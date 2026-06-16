@@ -9,7 +9,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { idbGetAll, idbGet } from './indexedDB';
-import { writeRecord } from './syncService';
+import { writeRecord, getScoresFromFirestore } from './syncService';
 import { validateTeacherCanSubmit } from './assessmentService';
 
 // ── SCORE CRUD ────────────────────────────────────────────────────
@@ -132,7 +132,12 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
 
   if (enrollments.length === 0) throw new Error('No active enrollments found');
 
-  const allScores     = await getScores(schoolId, { classId, academicYear, term });
+  // Fetch scores directly from Firestore to guarantee all teachers'
+  // submissions are included, regardless of local IDB state.
+  // This prevents reports missing scores entered on other devices.
+  const allScores = navigator.onLine
+    ? await getScoresFromFirestore(schoolId, classId, academicYear, term)
+    : await getScores(schoolId, { classId, academicYear, term });
   const allSubjects   = await getAll('subjects', 'schoolId', schoolId);
   const classSubjects = allSubjects.filter(s => s.classIds?.includes(classId));
 
