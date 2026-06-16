@@ -269,6 +269,30 @@ export default function Teachers() {
     finally { setQAdding(false); }
   }
 
+  async function handleRemoveTeacher(teacher) {
+    if (!window.confirm(
+      `Remove ${teacher.firstName} ${teacher.lastName}?\n\nThis deactivates their account. They will no longer be able to log in. Their score records are preserved.`
+    )) return;
+    setError('');
+    try {
+      // Mark teacher record as inactive in IDB/Firestore
+      await writeRecord('teachers', teacher.id, {
+        ...teacher, status: 'inactive', deactivatedAt: Date.now(),
+      }, schoolId);
+
+      // Update their user document so they can't log in as this school's teacher
+      const { getDocs, query, collection, where, updateDoc } = await import('firebase/firestore');
+      const q    = query(collection(db, 'users'), where('teacherId', '==', teacher.id));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        await updateDoc(snap.docs[0].ref, { status: 'inactive', role: 'inactive_teacher' });
+      }
+      await load();
+    } catch (err) {
+      setError('Failed to remove teacher: ' + err.message);
+    }
+  }
+
   function getNames(ids, items) {
     return items.filter(i => ids?.includes(i.id)).map(i => i.name);
   }
@@ -359,7 +383,17 @@ export default function Teachers() {
                         }
                       </td>
                       <td>
+                        <span className={`badge badge-${t.status === 'inactive' ? 'neutral' : 'success'}`}>
+                          {t.status === 'inactive' ? 'Inactive' : 'Active'}
+                        </span>
+                      </td>
+                      <td>
                         <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(t); setShowModal(true); }}>Edit</button>
+                        {t.status !== 'inactive' ? (
+                          <button className="btn btn-danger btn-sm" onClick={() => handleRemoveTeacher(t)}>Remove</button>
+                        ) : (
+                          <span className="badge badge-neutral" style={{ fontSize: '.72rem' }}>Inactive</span>
+                        )}
                       </td>
                     </tr>
                   );
