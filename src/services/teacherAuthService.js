@@ -50,16 +50,22 @@ export async function createTeacherAccount(email, password, profileData) {
   await secondaryAuth.signOut();
 
   // Write the user profile document to Firestore (using the main db)
+  // assignedClasses and assignedSubjects MUST be arrays in Firestore.
+  // The rules use .hasAny() on these fields — if they are missing or not
+  // arrays, hasAny() throws and the teacher gets permission denied.
+  const assignedClasses  = Array.isArray(profileData.assignedClasses)  ? profileData.assignedClasses  : [];
+  const assignedSubjects = Array.isArray(profileData.assignedSubjects) ? profileData.assignedSubjects : [];
+
   await setDoc(doc(db, 'users', uid), {
     id:               uid,
     schoolId:         profileData.schoolId,
     email,
-    firstName:        profileData.firstName,
-    lastName:         profileData.lastName,
+    firstName:        profileData.firstName  || '',
+    lastName:         profileData.lastName   || '',
     role:             'teacher',
     teacherId:        profileData.teacherId,
-    assignedClasses:  profileData.assignedClasses  || [],
-    assignedSubjects: profileData.assignedSubjects || [],
+    assignedClasses,
+    assignedSubjects,
     status:           'active',
     createdAt:        Date.now(),
   });
