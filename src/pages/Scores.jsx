@@ -338,10 +338,19 @@ export default function Scores() {
       });
       setScores(scoreMap);
     } catch (err) {
-      if (err.message?.includes('permission') || err.message?.includes('Permission')) {
-        setEntryError('Permission error: your account may not be fully set up yet. Ask your school admin to assign your classes and subjects, then try again.');
+      console.error('[Scores] loadEntry error:', err);
+      if (err.message?.toLowerCase().includes('permission') ||
+          err.message?.toLowerCase().includes('insufficient')) {
+        setEntryError(
+          'Could not load scores — Firestore permission error. ' +
+          'Make sure the updated firestore.rules have been deployed. ' +
+          'Error: ' + err.message
+        );
+      } else if (err.message?.toLowerCase().includes('network') ||
+                 err.message?.toLowerCase().includes('offline')) {
+        setEntryError('You appear to be offline. Score data will load from local cache.');
       } else {
-        setEntryError(err.message);
+        setEntryError('Failed to load: ' + err.message);
       }
     } finally { setLoading(false); }
   }, [filters, schoolId]);
