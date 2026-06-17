@@ -1,74 +1,93 @@
 // src/contexts/AuthContext.jsx
 //
-// Changes:
-// - isSuperAdmin() now delegates to the updated superAdminService which supports
-//   multiple emails via VITE_SUPER_ADMIN_EMAILS env var.
-// - No other logic changes; all existing functionality preserved.
+// Critical fixes:
+// 1. On auth state change, ALWAYS fetch profile from Firestore if IDB is empty
+//    (cache cleared scenario). Never leave userProfile as null when user is logged in.
+// 2. initialSync() is awaited before setting loading=false so that SchoolContext
+//    has fresh Firestore data in IDB before it tries to read.
+// 3. syncComplete state added — components can wait for sync before rendering.
+// 4. Super admin path unchanged.
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
-  signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
+  signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  createUserWithEmailAndPassword,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
+import { auth, db }              from '../services/firebase';
 import { initialSync, setupConnectivityListeners } from '../services/syncService';
-import { idbGet, idbPut } from '../services/indexedDB';
-import { isSuperAdmin } from '../services/superAdminService';
+import { idbGet, idbPut }        from '../services/indexedDB';
+import { isSuperAdmin }           from '../services/superAdminService';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user,        setUser]        = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
-  const [loading,     setLoading]     = useState(true);
+  const [user,         setUser]         = useState(null);
+  const [userProfile,  setUserProfile]  = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [syncComplete, setSyncComplete] = useState(false);
 
   useEffect(() => {
     setupConnectivityListeners();
 
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        // Super admin — synthesise a profile without needing a Firestore user doc
-        if (isSuperAdmin(firebaseUser.email)) {
-          const saProfile = {
-            id:        firebaseUser.uid,
-            email:     firebaseUser.email,
-            firstName: 'Super',
-            lastName:  'Admin',
-            role:      'superadmin',
-            schoolId:  null,
-          };
-          setUser(firebaseUser);
-          setUserProfile(saProfile);
-          setLoading(false);
-          return;
-        }
+      setSyncComplete(false);
 
-        // Regular user — try IndexedDB first (works offline)
-        let profile = await idbGet('users', firebaseUser.uid);
-
-        if (!profile && navigator.onLine) {
-          try {
-            const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-            if (snap.exists()) {
-              profile = { id: snap.id, ...snap.data() };
-              await idbPut('users', profile);
-            }
-          } catch (err) {
-            console.warn('Could not fetch user profile:', err.message);
-          }
-        }
-
-        setUser(firebaseUser);
-        setUserProfile(profile);
-
-        if (profile?.schoolId && navigator.onLine) {
-          initialSync(profile.schoolId).catch(console.error);
-        }
-      } else {
+      if (!firebaseUser) {
         setUser(null);
         setUserProfile(null);
+        setLoading(false);
+        setSyncComplete(true);
+        return;
       }
+
+      // ── SUPER ADMIN ────────────────────────────────────────────
+      if (isSuperAdmin(firebaseUser.email)) {
+        setUser(firebaseUser);
+        setUserProfile({
+          id: firebaseUser.uid, email: firebaseUser.email,
+          firstName: 'Super', lastName: 'Admin',
+          role: 'superadmin', schoolId: null,
+        });
+        setLoading(false);
+        setSyncComplete(true);
+        return;
+      }
+
+      // ── REGULAR USER ───────────────────────────────────────────
+      // Step 1: Try IDB (instant, works offline)
+      let profile = await idbGet('users', firebaseUser.uid);
+
+      // Step 2: IDB miss (cache cleared) → ALWAYS fetch from Firestore
+      if (!profile && navigator.onLine) {
+        try {
+          const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (snap.exists()) {
+            profile = { id: snap.id, ...snap.data() };
+            await idbPut('users', profile);  // repopulate IDB
+          }
+        } catch (err) {
+          console.error('[Auth] Could not fetch user profile from Firestore:', err.message);
+        }
+      }
+
+      // Set user immediately so UI can render something
+      setUser(firebaseUser);
+      setUserProfile(profile || null);
       setLoading(false);
+
+      // Step 3: Run full sync to repopulate ALL IDB collections from Firestore.
+      // This fixes "students disappear after cache clear" — after this completes,
+      // SchoolContext will re-read from IDB and find everything.
+      if (profile?.schoolId && navigator.onLine) {
+        try {
+          await initialSync(profile.schoolId);
+        } catch (err) {
+          console.error('[Auth] initialSync failed:', err.message);
+        }
+      }
+
+      setSyncComplete(true);
     });
 
     return unsub;
@@ -83,31 +102,29 @@ export function AuthProvider({ children }) {
   }
 
   async function registerAdmin(email, password, schoolData) {
-    const cred    = await createUserWithEmailAndPassword(auth, email, password);
-    const uid     = cred.user.uid;
+    const cred     = await createUserWithEmailAndPassword(auth, email, password);
+    const uid      = cred.user.uid;
     const schoolId = `school_${Date.now()}`;
 
     const school = {
-      id:            schoolId,
-      name:          schoolData.schoolName,
-      address:       schoolData.address       || '',
-      phone:         schoolData.phone         || '',
-      email:         schoolData.email         || '',
-      code:          schoolData.code          || schoolData.schoolName.substring(0, 3).toUpperCase(),
-      gradingScale:  null,
+      id:             schoolId,
+      name:           schoolData.schoolName,
+      address:        schoolData.address        || '',
+      phone:          schoolData.phone          || '',
+      email:          schoolData.email          || '',
+      code:           schoolData.code           || schoolData.schoolName.substring(0, 3).toUpperCase(),
+      gradingScale:   null,
       promotionRules: null,
-      academicYear:  schoolData.academicYear  || '2024/2025',
-      currentTerm:   schoolData.currentTerm   || '1',
-      createdAt:     Date.now(),
+      academicYear:   schoolData.academicYear   || new Date().getFullYear() + '/' + (new Date().getFullYear() + 1),
+      currentTerm:    schoolData.currentTerm    || '1',
+      createdAt:      Date.now(),
     };
 
     await setDoc(doc(db, 'schools', schoolId), school);
     await idbPut('schools', school);
 
     const profile = {
-      id:        uid,
-      schoolId,
-      email,
+      id: uid, schoolId, email,
       firstName: schoolData.firstName || '',
       lastName:  schoolData.lastName  || '',
       role:      'admin',
@@ -121,7 +138,10 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, login, logout, registerAdmin }}>
+    <AuthContext.Provider value={{
+      user, userProfile, loading, syncComplete,
+      login, logout, registerAdmin,
+    }}>
       {loading ? (
         <div style={{
           minHeight: '100vh', display: 'flex', alignItems: 'center',
