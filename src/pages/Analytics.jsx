@@ -42,7 +42,7 @@ function UpgradePrompt({ planNeeded }) {
         and individual student progress tracking.
       </p>
       <a
-        href="https://wa.me/233240000000"
+        href="https://wa.me/233549271528"
         target="_blank" rel="noreferrer"
         style={{
           background: '#25D366', color: '#fff', padding: '10px 24px',
