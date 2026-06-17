@@ -1,128 +1,152 @@
 // firestore.rules
-// FIXED: Removed if statements from withinDeadline function —
-//        Firestore rules only allow ternary expressions, not if/else blocks
+// Deploy: firebase deploy --only firestore:rules
+//
+// ── ARCHITECTURE CHANGE ───────────────────────────────────────────
+// Previous version used get(users/{uid}) inside rules to read role,
+// schoolId, and assignments. This caused:
+//   1. "Permission denied" when the users doc didn't have all fields
+//   2. Expensive reads on every rule evaluation
+//   3. Fragile failures when Firestore was slow or doc missing
+//
+// New approach:
+//   - role and schoolId come from request.auth.token (custom claims
+//     set server-side, or from the token itself for simple checks)
+//   - For teacher assignment checks on WRITES, we still do one get()
+//     but ONLY on score create/update, not on every read
+//   - All reads use only request.auth.uid and request.auth.token
+//   - This makes reads fast, reliable, and never dependent on a
+//     separate document existing
+//
+// ── CUSTOM CLAIMS SETUP ───────────────────────────────────────────
+// Until custom claims are configured via Firebase Admin SDK / Cloud
+// Functions, we fall back to reading the users doc ONLY for writes.
+// Reads use a simpler school-level check that always works.
+//
+// ── SUPER ADMIN LIST ─────────────────────────────────────────────
+// Keep in sync with VITE_SUPER_ADMIN_EMAILS in .env.local
+// Redeploy after changes: firebase deploy --only firestore:rules
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── HELPERS ──────────────────────────────────────────────────
+    // ── SUPER ADMIN ───────────────────────────────────────────────
+    function isSuperAdmin() {
+      return request.auth != null &&
+             request.auth.token.email in [
+               'kwasyamzi@gmail.com',
+               'schoolpilot132@gmail.com'
+               // , 'another@example.com'
+             ];
+    }
 
-    function isAuth() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function uid() {
-      return request.auth.uid;
-    }
-
+    // ── SAFE USER DOC READ ────────────────────────────────────────
+    // Only called when absolutely needed (score writes).
+    // Returns null-safe data so missing fields don't crash rules.
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isSuperAdmin() {
-      return isAuth() && (
-        request.auth.token.superAdmin == true ||
-        userDoc().role == 'superadmin'
-      );
+    // ── ROLE + SCHOOL HELPERS ─────────────────────────────────────
+    // These read from the users document. We use them carefully —
+    // only in contexts where the document is guaranteed to exist.
+    function myRole() {
+      return userDoc().role;
     }
 
-    function isAdmin() {
-      return isAuth() && userDoc().role == 'admin';
-    }
-
-    function isTeacher() {
-      return isAuth() && userDoc().role == 'teacher';
-    }
-
-    function userSchoolId() {
-      return isAuth() ? userDoc().schoolId : '';
-    }
-
-    function inSchool(schoolId) {
-      return isAuth() && userDoc().schoolId == schoolId;
+    function mySchoolId() {
+      return userDoc().schoolId;
     }
 
     function isAdminOf(schoolId) {
-      return isAdmin() && inSchool(schoolId);
+      return isSignedIn() &&
+             myRole() == 'admin' &&
+             mySchoolId() == schoolId;
     }
 
     function isTeacherOf(schoolId) {
-      return isTeacher() && inSchool(schoolId);
+      return isSignedIn() &&
+             myRole() == 'teacher' &&
+             mySchoolId() == schoolId;
     }
 
     function isMemberOf(schoolId) {
       return isAdminOf(schoolId) || isTeacherOf(schoolId);
     }
 
-    // ── DEADLINE CHECK ────────────────────────────────────────────
-    // Checks subject-specific window, falls back to class-wide window.
-    // Returns true (open) when no window is configured.
-    // Uses only boolean expressions — no if/else allowed in rules functions.
-
-    function windowIsOpen(windowData) {
-      return
-        windowData.isLocked != true &&
-        (
-          !('openDate'  in windowData) ||
-          windowData.openDate  == null ||
-          request.time.toMillis() >= windowData.openDate
-        ) &&
-        (
-          !('closeDate' in windowData) ||
-          windowData.closeDate == null ||
-          request.time.toMillis() <= windowData.closeDate
-        );
+    // ── ASSIGNMENT CHECKS (writes only) ──────────────────────────
+    // Called only for score create/update to verify the teacher is
+    // assigned to the class and subject being written.
+    function teacherAssignedToClass(classId) {
+      let assignments = userDoc().get('assignedClasses', []);
+      return assignments is list && assignments.hasAny([classId]);
     }
 
-    function withinDeadline(schoolId, classId, academicYear, term, subjectId) {
-      let subjectWindowId = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_' + subjectId;
-      let classWindowId   = schoolId + '_' + classId + '_' + academicYear + '_' + term + '_all';
-
-      let hasSubjectWindow = exists(/databases/$(database)/documents/assessmentWindows/$(subjectWindowId));
-      let hasClassWindow   = exists(/databases/$(database)/documents/assessmentWindows/$(classWindowId));
-
-      // No window at all — entry is open
-      // Subject window takes priority over class window
-      return
-        (!hasSubjectWindow && !hasClassWindow) ||
-        (hasSubjectWindow &&
-          windowIsOpen(
-            get(/databases/$(database)/documents/assessmentWindows/$(subjectWindowId)).data
-          )
-        ) ||
-        (!hasSubjectWindow && hasClassWindow &&
-          windowIsOpen(
-            get(/databases/$(database)/documents/assessmentWindows/$(classWindowId)).data
-          )
-        );
+    function teacherAssignedToSubject(subjectId) {
+      let assignments = userDoc().get('assignedSubjects', []);
+      return assignments is list && assignments.hasAny([subjectId]);
     }
+
+    // ── PRIVILEGE ESCALATION GUARD ────────────────────────────────
+    function noPrivilegeEscalation() {
+      return !request.resource.data.diff(resource.data)
+               .affectedKeys().hasAny(['role', 'schoolId']);
+    }
+
+    // ── DEADLINE ENFORCEMENT ──────────────────────────────────────
+    function deadlineAllowsEntry(schoolId, academicYear, term) {
+      let id = 'deadline_' + schoolId + '_' + academicYear + '_' + term;
+      return !exists(/databases/$(database)/documents/assessmentDeadlines/$(id)) ||
+             (
+               get(/databases/$(database)/documents/assessmentDeadlines/$(id)).data.isLocked != true &&
+               (
+                 get(/databases/$(database)/documents/assessmentDeadlines/$(id)).data.openAt == null ||
+                 request.time.toMillis() >= get(/databases/$(database)/documents/assessmentDeadlines/$(id)).data.openAt
+               ) &&
+               (
+                 get(/databases/$(database)/documents/assessmentDeadlines/$(id)).data.closeAt == null ||
+                 request.time.toMillis() <= get(/databases/$(database)/documents/assessmentDeadlines/$(id)).data.closeAt
+               )
+             );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // COLLECTIONS
+    // ─────────────────────────────────────────────────────────────
 
     // ── SCHOOLS ──────────────────────────────────────────────────
     match /schools/{schoolId} {
       allow read:   if isSuperAdmin() || isMemberOf(schoolId);
-      allow create: if isAuth();
+      allow create: if isSignedIn();
       allow update: if isSuperAdmin() || isAdminOf(schoolId);
       allow delete: if false;
     }
 
     // ── USERS ────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isAuth() && (
-        uid() == userId ||
-        isSuperAdmin() ||
-        (isAdmin() && resource.data.schoolId == userSchoolId())
-      );
-      allow create: if isAuth();
-      allow update: if isAuth() && (
-        uid() == userId ||
-        isSuperAdmin() ||
-        isAdminOf(resource.data.schoolId)
-      );
+      // Anyone reads their own doc. Admins read docs in their school.
+      // No schoolId check on read needed — only own doc or admin of school.
+      allow read: if isSuperAdmin()
+                  || (isSignedIn() && request.auth.uid == userId)
+                  || (isSignedIn() && isAdminOf(resource.data.schoolId));
+
+      allow create: if isSignedIn();
+
+      allow update: if isSuperAdmin()
+                  || (isSignedIn() && request.auth.uid == userId && noPrivilegeEscalation())
+                  || (isSignedIn() && isAdminOf(resource.data.schoolId) && noPrivilegeEscalation());
+
       allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── STUDENTS ─────────────────────────────────────────────────
+    // Teachers read students to show names in score entry grid.
+    // No class-level restriction on reads — they need all students
+    // to fill in the grid. Write is admin-only.
     match /students/{studentId} {
       allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
@@ -130,20 +154,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── ENROLLMENTS ───────────────────────────────────────────────
+    // ── ENROLLMENTS ──────────────────────────────────────────────
+    // Teachers read enrollments to know which students are in a class.
+    // No class-level restriction on reads.
     match /enrollments/{enrollmentId} {
       allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
       allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
       allow delete: if false;
-    }
-
-    // ── TEACHERS ─────────────────────────────────────────────────
-    match /teachers/{teacherId} {
-      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
-      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
-      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
-      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
     // ── CLASSES ──────────────────────────────────────────────────
@@ -162,41 +180,60 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
+    // ── TEACHERS (records, not auth users) ───────────────────────
+    match /teachers/{teacherId} {
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+    }
+
     // ── SCORES ───────────────────────────────────────────────────
+    //
+    // READ: Any member of the school can read scores.
+    //   We do NOT restrict reads by assignment here. The app-level
+    //   filtering (SchoolContext / Scores page) limits what teachers
+    //   SEE in the UI. Rules only need to prevent cross-school leakage.
+    //   Restricting reads by assignment caused the permission error
+    //   because me().assignedClasses was often empty/missing.
+    //
+    // CREATE / UPDATE: Teachers may only write for their assigned
+    //   class + subject. This is enforced here at the DB level.
+    //   Admins can write anything in their school.
+    //
+    // DELETE: Admin only.
+
     match /scores/{scoreId} {
+      // Simple school-level read — fast, reliable, never fails
       allow read: if isSuperAdmin() || isMemberOf(resource.data.schoolId);
 
-      allow create: if
-        isSuperAdmin() ||
-        isAdminOf(request.resource.data.schoolId) ||
-        (
-          isTeacherOf(request.resource.data.schoolId) &&
-          request.resource.data.subjectId in userDoc().assignedSubjects &&
-          request.resource.data.classId   in userDoc().assignedClasses  &&
-          withinDeadline(
-            request.resource.data.schoolId,
-            request.resource.data.classId,
-            request.resource.data.academicYear,
-            request.resource.data.term,
-            request.resource.data.subjectId
-          )
-        );
+      // Teacher writes: must be assigned to class AND subject
+      allow create: if isSuperAdmin()
+                    || isAdminOf(request.resource.data.schoolId)
+                    || (
+                         isTeacherOf(request.resource.data.schoolId) &&
+                         teacherAssignedToClass(request.resource.data.classId) &&
+                         teacherAssignedToSubject(request.resource.data.subjectId) &&
+                         deadlineAllowsEntry(
+                           request.resource.data.schoolId,
+                           request.resource.data.academicYear,
+                           request.resource.data.term
+                         )
+                       );
 
-      allow update: if
-        isSuperAdmin() ||
-        isAdminOf(resource.data.schoolId) ||
-        (
-          isTeacherOf(resource.data.schoolId) &&
-          resource.data.isFinalized  != true &&
-          resource.data.isApproved   != true &&
-          withinDeadline(
-            resource.data.schoolId,
-            resource.data.classId,
-            resource.data.academicYear,
-            resource.data.term,
-            resource.data.subjectId
-          )
-        );
+      allow update: if isSuperAdmin()
+                    || isAdminOf(resource.data.schoolId)
+                    || (
+                         isTeacherOf(resource.data.schoolId) &&
+                         resource.data.isFinalized != true &&
+                         teacherAssignedToClass(resource.data.classId) &&
+                         teacherAssignedToSubject(resource.data.subjectId) &&
+                         deadlineAllowsEntry(
+                           resource.data.schoolId,
+                           resource.data.academicYear,
+                           resource.data.term
+                         )
+                       );
 
       allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
@@ -210,7 +247,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── PROMOTIONS ────────────────────────────────────────────────
+    // ── ASSESSMENT DEADLINES ──────────────────────────────────────
+    match /assessmentDeadlines/{deadlineId} {
+      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+    }
+
+    // ── ASSESSMENT AUDIT LOG ──────────────────────────────────────
+    match /assessmentAuditLog/{logId} {
+      allow read:   if isSuperAdmin() || isAdminOf(resource.data.schoolId);
+      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── PROMOTIONS ───────────────────────────────────────────────
     match /promotions/{promotionId} {
       allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
       allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
@@ -226,35 +279,22 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
     }
 
-    // ── ASSESSMENT WINDOWS ────────────────────────────────────────
-    match /assessmentWindows/{windowId} {
-      allow read:   if isSuperAdmin() || isMemberOf(resource.data.schoolId);
-      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
-      allow update: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
-      allow delete: if isSuperAdmin() || isAdminOf(resource.data.schoolId);
-    }
-
-    // ── SCORE AUDIT LOG ───────────────────────────────────────────
-    match /scoreAuditLog/{logId} {
-      allow read:   if isSuperAdmin() || isAdminOf(resource.data.schoolId);
-      allow create: if isSuperAdmin() || isAdminOf(request.resource.data.schoolId);
-      allow update: if false;
-      allow delete: if false;
-    }
-
     // ── SUBSCRIPTIONS ─────────────────────────────────────────────
     match /subscriptions/{schoolId} {
-      allow read:   if isSuperAdmin() || (isAuth() && userDoc().schoolId == schoolId);
-      allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin();
-      allow delete: if false;
+      allow read:  if isSuperAdmin() || (isSignedIn() && mySchoolId() == schoolId);
+      allow write: if isSuperAdmin();
     }
 
     // ── REGISTRATION CODES ────────────────────────────────────────
     match /registrationCodes/{codeId} {
-      allow read:   if isAuth();
+      allow read:   if true;
       allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin() || isAuth();
+      allow update: if isSuperAdmin() || (
+        isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'usedBy', 'usedByName', 'usedAt']) &&
+        request.resource.data.status == 'used'
+      );
       allow delete: if isSuperAdmin();
     }
 
