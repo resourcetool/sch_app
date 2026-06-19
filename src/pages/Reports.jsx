@@ -76,6 +76,11 @@ export default function Reports() {
     finally { setFinalizing(false); }
   }
 
+  // Builds the real, current data shown on every report card.
+  // No placeholders — every field is sourced from actual admin/teacher input.
+  // className is the TRUE class name the admin created (replaces "MEC").
+  // totalStudents is the actual number of students in this class/term
+  // (used for "RAW SCORE: X out of totalStudents").
   function buildExtraInfo() {
     return {
       classTeacher:   school?.classTeacher   || '',
@@ -85,8 +90,8 @@ export default function Reports() {
       nextTermBegins: school?.nextTermBegins
         ? new Date(school.nextTermBegins).toLocaleDateString('en-GH', { day: '2-digit', month: '2-digit', year: 'numeric' })
         : '',
-      mec:      school?.mec || '',
-      noOnRoll: results.length,
+      className:     selectedClass?.name || '',
+      totalStudents: results.length,
     };
   }
 

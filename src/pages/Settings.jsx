@@ -4,7 +4,7 @@
 // - Added "School Logo" tab: upload a logo image, preview it, save as base64
 //   to school.logoBase64 (stored in Firestore/IDB alongside all other school data).
 //   Logo is automatically included in generated report card PDFs.
-// - Added Report Card fields tab: Next Term Begins, MEC, Class Teacher name,
+// - Added Report Card fields tab: Next Term Begins, Class Teacher name,
 //   School Counsellor, Academic Head, Administrator — all saved to the school
 //   document and used by reportService when generating PDFs.
 // - School Type field added to School Info (used as subtitle in report header).
@@ -271,14 +271,9 @@ export default function Settings() {
               />
               <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Shown on report header</span>
             </div>
-            <div className="form-group">
-              <label>MEC (Class / Form)</label>
-              <input
-                value={sf.mec || ''}
-                onChange={e => up('mec', e.target.value)}
-                placeholder="e.g. JHS 1"
-              />
-            </div>
+            {/* MEC field removed — the report now shows the actual class name
+                (e.g. "JHS 1", "Class 6") assigned in the Classes page automatically.
+                No manual entry needed. */}
             <div className="form-group">
               <label>Class Score Weight (%)</label>
               <input
