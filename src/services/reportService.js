@@ -1,13 +1,19 @@
 // src/services/reportService.js
 //
-// Changes:
-// - All PDF styling driven by school.reportStyle (colors, font, font sizes, border style)
-// - Signatures from school.signatures drawn as images in the signature block
-// - Border style: single / double / none
-// - Watermark support ("DRAFT" diagonal text)
-// - Font family: helvetica / times / courier
-// - Custom table header bg/text colors
-// - generateStudentReportPDF fully updated; generateClassReportPDF preserved
+// Changes per request — make the report sheet reflect true, current data:
+// 1. REMOVED "NO. ON ROLL" and "NO. OF ONES" fields entirely (cleaner, more
+//    professional layout).
+// 2. "OUT OF" now reflects the ACTUAL number of students in the class
+//    (results.length passed in as totalStudents), not a static 100/subject
+//    calculation. This is the true denominator for "raw score out of X".
+// 3. "MEC" renamed to the actual class name assigned by the admin
+//    (e.g. "JHS 1", "Class 6") — pulled from classInfo.name, the real
+//    class label the admin created, not a separate manually-typed field.
+// 4. Remaining fields (Academic Year, Name, Current Term, Next Term Begins,
+//    Attendance, Raw Score, Aggregate) all pull from real admin/teacher
+//    input — no placeholders.
+// 5. Layout re-balanced into a clean 2-column info grid now that 2 rows
+//    were removed.
 
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -39,7 +45,7 @@ function termLabel(term) {
 }
 
 function ordinal(n) {
-  const s = ['th','st','nd','rd'], v = n % 100;
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
@@ -59,7 +65,6 @@ function gradeNo(grade, gradingScale) {
   return idx >= 0 ? idx + 1 : '—';
 }
 
-// Draw outer border (single or double)
 function drawOuterBorder(doc, style, pageW, pageH) {
   if (style.borderStyle === 'none') return;
   const primary = hexToRgb(style.primaryColor);
@@ -72,16 +77,13 @@ function drawOuterBorder(doc, style, pageW, pageH) {
   }
 }
 
-// Draw "DRAFT" watermark diagonally across the page
 function drawWatermark(doc, pageW, pageH) {
   doc.saveGraphicsState();
   doc.setGState(new doc.GState({ opacity: 0.07 }));
   doc.setFontSize(60);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text('DRAFT', pageW / 2, pageH / 2, {
-    align: 'center', angle: 45,
-  });
+  doc.text('DRAFT', pageW / 2, pageH / 2, { align: 'center', angle: 45 });
   doc.restoreGraphicsState();
   doc.setTextColor(0, 0, 0);
 }
@@ -97,24 +99,18 @@ export async function generateStudentReportPDF(
   const margin = 12;
   const cW     = pageW - margin * 2;
 
-  const PRIMARY  = hexToRgb(S.primaryColor);
+  const PRIMARY   = hexToRgb(S.primaryColor);
   const HEADER_BG = hexToRgb(S.tableHeaderBg);
   const HEADER_TX = hexToRgb(S.tableHeaderText);
-  const LGRAY    = [230, 230, 230];
-  const MGRAY    = [180, 180, 180];
-  const BLACK    = [20, 20, 20];
-  const WHITE    = [255, 255, 255];
+  const LGRAY     = [230, 230, 230];
+  const MGRAY     = [180, 180, 180];
+  const BLACK     = [20, 20, 20];
+  const WHITE     = [255, 255, 255];
 
-  const gradingScale = school?.gradingScale?.length
-    ? school.gradingScale
-    : defaultGradingScale();
+  const gradingScale = school?.gradingScale?.length ? school.gradingScale : defaultGradingScale();
+  const fontName     = S.font || 'helvetica';
 
-  const fontName = S.font || 'helvetica';
-
-  // ── WATERMARK ────────────────────────────────────────────────
   if (S.showWatermark) drawWatermark(doc, pageW, pageH);
-
-  // ── OUTER BORDER ─────────────────────────────────────────────
   drawOuterBorder(doc, S, pageW, pageH);
 
   // ── SCHOOL HEADER ─────────────────────────────────────────────
@@ -149,56 +145,56 @@ export async function generateStudentReportPDF(
   doc.line(margin, y, pageW - margin, y);
 
   // ── INFO GRID ─────────────────────────────────────────────────
-  y += 5;
+  // Only real, admin/teacher-sourced fields. No placeholders.
+  // "NO. ON ROLL" and "NO. OF ONES" removed entirely per request.
+  // "OUT OF" = true number of students in the class (totalStudents).
+  // "MEC" replaced with the real class name assigned by the admin.
+  y += 6;
   doc.setFontSize(S.fontSize);
   doc.setTextColor(...BLACK);
 
-  const nextTermBegins = extraInfo.nextTermBegins || school?.nextTermBegins || '';
-  const mec            = extraInfo.mec            || school?.mec            || '';
-  const noOnRoll       = extraInfo.noOnRoll        || result.totalStudents   || '';
-  const attendance     = extraInfo.attendance      || student.attendance     || '';
-  const noOfOnes       = extraInfo.noOfOnes        || 0;
-  const rawScore       = result.totalScore || 0;
-  const outOf          = result.subjectResults?.length
-    ? result.subjectResults.reduce((s) => s + 100, 0) : 0;
-  const aggregate      = result.aggregate || result.position || '';
+  const className       = classInfo?.name || extraInfo.className || '—';
+  const nextTermBegins   = extraInfo.nextTermBegins || school?.nextTermBegins || '—';
+  const attendance       = extraInfo.attendance      || student.attendance     || '—';
+  const rawScore         = result.totalScore ?? 0;
+  const totalStudents    = extraInfo.totalStudents || result.totalStudents || 0;
+  const aggregate        = result.aggregate || result.position || '—';
 
-  const col1x = margin, col2x = pageW / 2 + 2, lineH = 5.5;
+  const col1x = margin;
+  const col2x = pageW / 2 + 4;
+  const lineH = 6.2;
 
-  const leftInfo  = [
-    ['ACADEMIC YEAR:', academicYear],
-    ['NAME:',          `${student.firstName} ${student.lastName}`],
-    ['NO. ON ROLL:',   noOnRoll],
-    ['NO. OF ONES:',   noOfOnes],
+  // LEFT COLUMN
+  const leftInfo = [
+    ['ACADEMIC YEAR:',     academicYear],
+    ['NAME:',              `${student.firstName} ${student.lastName}`],
+    ['CLASS:',             className],
+    ['CURRENT TERM:',      ordinal(Number(term))],
   ];
+
+  // RIGHT COLUMN
   const rightInfo = [
-    ['CURRENT TERM',     ordinal(Number(term))],
     ['NEXT TERM BEGINS:', nextTermBegins],
-    ['MEC:',             mec],
-    ['ATTENDANCE:',      attendance],
-  ];
-  const rightInfo2 = [
-    ['RAW SCORE:',  rawScore],
-    ['OUT OF:',     outOf || '—'],
-    ['OUT OF 1000', ''],
-    ['AGGREGATE:',  aggregate],
+    ['ATTENDANCE:',       attendance],
+    ['RAW SCORE:',        `${rawScore} out of ${totalStudents > 0 ? totalStudents : '—'}`],
+    ['AGGREGATE:',        aggregate],
   ];
 
   leftInfo.forEach(([label, val], i) => {
-    doc.setFont(fontName, 'bold');   doc.text(label,        col1x,      y + i * lineH);
-    doc.setFont(fontName, 'normal'); doc.text(String(val ?? ''), col1x + 32, y + i * lineH);
-  });
-  rightInfo.forEach(([label, val], i) => {
-    doc.setFont(fontName, 'bold');   doc.text(label,        col2x,      y + i * lineH);
-    doc.setFont(fontName, 'normal'); doc.text(String(val ?? ''), col2x + 30, y + i * lineH);
-  });
-  y += leftInfo.length * lineH + 1;
-  rightInfo2.forEach(([label, val], i) => {
-    doc.setFont(fontName, 'bold');   doc.text(label,        col2x,      y + i * lineH);
-    doc.setFont(fontName, 'normal'); doc.text(String(val ?? ''), col2x + 30, y + i * lineH);
+    doc.setFont(fontName, 'bold');
+    doc.text(label, col1x, y + i * lineH);
+    doc.setFont(fontName, 'normal');
+    doc.text(String(val ?? '—'), col1x + 34, y + i * lineH);
   });
 
-  y += 4;
+  rightInfo.forEach(([label, val], i) => {
+    doc.setFont(fontName, 'bold');
+    doc.text(label, col2x, y + i * lineH);
+    doc.setFont(fontName, 'normal');
+    doc.text(String(val ?? '—'), col2x + 34, y + i * lineH);
+  });
+
+  y += leftInfo.length * lineH + 5;
   doc.setLineWidth(0.3);
   doc.setDrawColor(...LGRAY);
   doc.line(margin, y, pageW - margin, y);
@@ -239,24 +235,15 @@ export async function generateStudentReportPDF(
     body: subjectRows,
     margin: { left: margin, right: margin },
     headStyles: {
-      fillColor:   HEADER_BG,
-      textColor:   HEADER_TX,
-      lineColor:   MGRAY,
-      lineWidth:   0.2,
-      fontSize:    S.fontSize - 0.5,
-      fontStyle:   'bold',
-      halign:      'center',
-      valign:      'middle',
-      cellPadding: 2,
-      font:        fontName,
+      fillColor: HEADER_BG, textColor: HEADER_TX,
+      lineColor: MGRAY, lineWidth: 0.2,
+      fontSize: S.fontSize - 0.5, fontStyle: 'bold',
+      halign: 'center', valign: 'middle', cellPadding: 2, font: fontName,
     },
     bodyStyles: {
-      fontSize:    S.fontSize,
-      textColor:   BLACK,
-      lineColor:   LGRAY,
-      lineWidth:   0.2,
-      cellPadding: { top: 2, bottom: 2, left: 3, right: 2 },
-      font:        fontName,
+      fontSize: S.fontSize, textColor: BLACK,
+      lineColor: LGRAY, lineWidth: 0.2,
+      cellPadding: { top: 2, bottom: 2, left: 3, right: 2 }, font: fontName,
     },
     alternateRowStyles: { fillColor: [250, 250, 252] },
     columnStyles: {
@@ -268,8 +255,7 @@ export async function generateStudentReportPDF(
       5: { halign: 'center', cellWidth: 18 },
       6: { halign: 'center' },
     },
-    tableLineColor: MGRAY,
-    tableLineWidth: 0.2,
+    tableLineColor: MGRAY, tableLineWidth: 0.2,
   });
 
   y = doc.lastAutoTable.finalY + 6;
@@ -285,7 +271,7 @@ export async function generateStudentReportPDF(
   doc.autoTable({
     startY: y,
     head:   [['GRADES', 'TOTAL MARKS', 'REMARKS']],
-    body:   sortedScale.map((g, i) => [`Grade ${g.grade}`, `${g.min} – ${g.max}`, g.remarks || '']),
+    body:   sortedScale.map(g => [`Grade ${g.grade}`, `${g.min} – ${g.max}`, g.remarks || '']),
     margin: { left: leftX, right: pageW - leftX - leftW },
     tableWidth: leftW,
     headStyles: {
@@ -297,8 +283,7 @@ export async function generateStudentReportPDF(
     bodyStyles: {
       fontSize: S.fontSize - 1.5, textColor: BLACK,
       lineColor: LGRAY, lineWidth: 0.15,
-      cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
-      font: fontName,
+      cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 }, font: fontName,
     },
     columnStyles: {
       0: { cellWidth: leftW * 0.34 },
@@ -336,8 +321,7 @@ export async function generateStudentReportPDF(
     bodyStyles: {
       fontSize: S.fontSize - 1.5, textColor: BLACK,
       lineColor: LGRAY, lineWidth: 0.15,
-      cellPadding: { top: 2.5, bottom: 2.5, left: 2, right: 2 },
-      font: fontName,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 2, right: 2 }, font: fontName,
     },
     columnStyles: {
       0: { cellWidth: rightW * 0.52 },
@@ -354,10 +338,10 @@ export async function generateStudentReportPDF(
   if (y > pageH - 50) { doc.addPage(); y = 14; }
 
   const sigItems = [
-    { key: 'classTeacher',  label: "Class Teacher's Name:",    name: extraInfo.classTeacher  || school?.classTeacher  || '' },
-    { key: 'counsellor',    label: "School Counsellor's Name:", name: extraInfo.counsellor   || school?.counsellor    || '' },
-    { key: 'academicHead',  label: "Academic Head's Name:",    name: extraInfo.academicHead  || school?.academicHead  || '' },
-    { key: 'administrator', label: "Administrator's Name:",    name: extraInfo.administrator || school?.administrator || '' },
+    { key: 'classTeacher',  label: "Class Teacher's Name:",     name: extraInfo.classTeacher  || school?.classTeacher  || '' },
+    { key: 'counsellor',    label: "School Counsellor's Name:",  name: extraInfo.counsellor    || school?.counsellor    || '' },
+    { key: 'academicHead',  label: "Academic Head's Name:",      name: extraInfo.academicHead  || school?.academicHead  || '' },
+    { key: 'administrator', label: "Administrator's Name:",      name: extraInfo.administrator || school?.administrator || '' },
   ];
 
   const sigLabelX = margin;
@@ -373,28 +357,22 @@ export async function generateStudentReportPDF(
   sigItems.forEach((sig, i) => {
     const rowY = y + i * rowH;
 
-    // Label
     doc.setFont(fontName, 'bold');
     doc.text(sig.label, sigLabelX, rowY + 4);
 
-    // Name in primary color
     doc.setFont(fontName, 'bold');
     doc.setTextColor(...PRIMARY);
     doc.text((sig.name || '').toUpperCase(), sigNameX, rowY + 4);
     doc.setTextColor(...BLACK);
 
-    // Signature image (if available)
     const sigImg = school?.signatures?.[sig.key];
     if (sigImg) {
       try {
         const fmt = sigImg.includes('image/png') ? 'PNG' : 'JPEG';
         doc.addImage(sigImg, fmt, sigImgX, rowY - 2, 30, 10);
-      } catch (e) {
-        // Signature image failed — draw blank line instead
-      }
+      } catch (e) { /* signature failed to render — skip silently */ }
     }
 
-    // "Signature:" label + line
     doc.setFont(fontName, 'normal');
     doc.setFontSize(S.fontSize - 1);
     doc.text('Signature:', sigImgX, rowY + 4);
@@ -403,7 +381,6 @@ export async function generateStudentReportPDF(
     doc.setDrawColor(...MGRAY);
     doc.line(sigLineX, rowY + 4.5, sigLineX + sigLineW, rowY + 4.5);
 
-    // Row separator
     if (i < sigItems.length - 1) {
       doc.setDrawColor(240, 240, 240);
       doc.setLineWidth(0.2);
@@ -421,7 +398,6 @@ export async function generateStudentReportPDF(
     pageW / 2, pageH - 10, { align: 'center' }
   );
 
-  // Re-draw border on top of content (ensures it's not obscured)
   drawOuterBorder(doc, S, pageW, pageH);
 
   return doc;
@@ -451,7 +427,7 @@ export async function generateClassReportPDF(classInfo, results, students, schoo
   const studentMap   = Object.fromEntries(students.map(s => [s.id, s]));
   const subjectNames = results[0]?.subjectResults?.map(sr => sr.subjectName) || [];
   const headers      = [['#', 'Student ID', 'Student Name', ...subjectNames, 'Total', 'Average', 'Position']];
-  const rows         = results.map((r, i) => {
+  const rows          = results.map((r, i) => {
     const s = studentMap[r.studentId];
     return [
       i + 1,
@@ -467,10 +443,7 @@ export async function generateClassReportPDF(classInfo, results, students, schoo
     head: headers,
     body: rows,
     margin: { left: margin, right: margin },
-    headStyles: {
-      fillColor: HEADER_BG, textColor: HEADER_TX,
-      fontSize: S.fontSize, fontStyle: 'bold', font: fontName,
-    },
+    headStyles: { fillColor: HEADER_BG, textColor: HEADER_TX, fontSize: S.fontSize, fontStyle: 'bold', font: fontName },
     bodyStyles: { fontSize: S.fontSize, cellPadding: 2, font: fontName },
     alternateRowStyles: { fillColor: [245, 248, 255] },
   });
