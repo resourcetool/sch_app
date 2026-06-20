@@ -26,6 +26,7 @@ import Scores                                       from './pages/Scores';
 import Reports                                      from './pages/Reports';
 import Promotion                                    from './pages/Promotion';
 import Analytics                                    from './pages/Analytics';
+import Support                                      from './pages/Support';
 import Backup                                       from './pages/Backup';
 import Settings                                     from './pages/Settings';
 import SuperAdmin                                   from './pages/SuperAdmin';
@@ -93,6 +94,7 @@ function AppRoutes() {
           <Route path="/scores"    element={<Scores />} />
           <Route path="/reports"   element={<Reports />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/support"   element={<Support />} />
           <Route path="*"          element={<Navigate to="/scores" replace />} />
         </Route>
       </Routes>
@@ -118,6 +120,7 @@ function AppRoutes() {
         <Route path="/backup"       element={<AdminOnly><Backup /></AdminOnly>} />
         <Route path="/settings"     element={<AdminOnly><Settings /></AdminOnly>} />
         <Route path="/assessments"  element={<AdminOnly><AssessmentDeadlines /></AdminOnly>} />
+        <Route path="/support"      element={<Support />} />
         <Route path="*"             element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
