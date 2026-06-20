@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSchool } from '../contexts/SchoolContext';
 import { v4 as uuidv4 } from 'uuid';
-import { writeRecord } from '../services/syncService';
+import { writeRecord, deleteRecord } from '../services/syncService';
 import { idbGetAll } from '../services/indexedDB';
 
 const LEVELS = ['Nursery', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3',
@@ -121,6 +121,27 @@ export default function Classes() {
     if (!data.id) record.createdAt = Date.now();
     await writeRecord('classes', id, record, schoolId);
     await refresh();
+  }
+
+  // Removing a class is a HARD delete (Firestore rules allow it for admins).
+  // Safety check: warn if students are currently enrolled, since deleting
+  // the class would leave their enrollment pointing at a class that no
+  // longer exists. Admin must confirm explicitly to proceed anyway.
+  async function handleRemoveClass(cls) {
+    const enrolledCount = enrollCounts[cls.id] || 0;
+    const warning = enrolledCount > 0
+      ? `${cls.name} has ${enrolledCount} student(s) currently enrolled.\n\n` +
+        `Deleting this class will NOT delete those students, but they will lose ` +
+        `their class assignment. Their score history is preserved.\n\n` +
+        `Are you sure you want to delete "${cls.name}"?`
+      : `Delete class "${cls.name}"? This cannot be undone.`;
+    if (!window.confirm(warning)) return;
+    try {
+      await deleteRecord('classes', cls.id);
+      await refresh();
+    } catch (err) {
+      alert('Failed to delete class: ' + err.message);
+    }
   }
 
   async function handleQuickAdd(e) {
@@ -236,7 +257,10 @@ export default function Classes() {
                       </td>
                       <td style={{ color: 'var(--text-lt)', fontSize: '.84rem' }}>{c.capacity || '—'}</td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(c)}>Edit</button>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(c)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleRemoveClass(c)}>Remove</button>
+                        </div>
                       </td>
                     </tr>
                   );

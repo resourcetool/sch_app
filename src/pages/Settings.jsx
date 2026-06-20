@@ -274,21 +274,16 @@ export default function Settings() {
             {/* MEC field removed — the report now shows the actual class name
                 (e.g. "JHS 1", "Class 6") assigned in the Classes page automatically.
                 No manual entry needed. */}
-            <div className="form-group">
-              <label>Class Score Weight (%)</label>
-              <input
-                type="number" min="0" max="100"
-                value={sf.classScorePercent ?? 50}
-                onChange={e => up('classScorePercent', Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group">
-              <label>Exam Score Weight (%)</label>
-              <input
-                type="number" min="0" max="100"
-                value={sf.examScorePercent ?? 50}
-                onChange={e => up('examScorePercent', Number(e.target.value))}
-              />
+            {/* Class/Exam Score Weight fields removed — these are now read
+                directly per-subject from each subject's Max Class Score /
+                Max Exam Score (set in the Subjects page). This guarantees
+                the report card always shows the real weighting actually
+                used to calculate that subject's total, instead of a
+                separate school-wide setting that could fall out of sync. */}
+            <div className="form-group full" style={{ background: 'var(--surface2)', borderRadius: 8, padding: '10px 14px', fontSize: '.8rem', color: 'var(--text-mid)' }}>
+              ℹ️ Class/Exam score weighting (e.g. 30%/70%) is now set per-subject in the
+              <strong> Subjects</strong> page via Max Class Score and Max Exam Score. The report card
+              automatically reflects each subject's real weighting.
             </div>
             <div className="form-group full" style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
               <span style={{ fontWeight: 700, color: 'var(--navy)', fontSize: '.88rem' }}>Signatories</span>

@@ -13,7 +13,7 @@ import { useSchool }  from '../contexts/SchoolContext';
 import { useAuth }    from '../contexts/AuthContext';
 import {
   getStudents, createStudent, updateStudent,
-  enrollStudent, getEnrollments, importStudentsFromArray,
+  enrollStudent, getEnrollments, importStudentsFromArray, removeStudent,
 } from '../services/studentService';
 import { importStudentsFromExcel } from '../services/backupService';
 
@@ -253,6 +253,25 @@ export default function Students() {
     await load();
   }
 
+  // Removing a student is a SOFT delete — status becomes 'withdrawn'.
+  // This preserves their historical scores/results (Firestore rules
+  // intentionally block hard-deleting students for this reason).
+  // They are also withdrawn from their active enrollment so they no
+  // longer appear in class rosters or score entry going forward.
+  async function handleRemove(student) {
+    if (!window.confirm(
+      `Remove ${student.firstName} ${student.lastName}?\n\n` +
+      `This withdraws the student from their class and marks their record as ` +
+      `inactive. Their past scores and results are preserved for academic records.`
+    )) return;
+    try {
+      await removeStudent(schoolId, student.id);
+      await load();
+    } catch (err) {
+      setError('Failed to remove student: ' + err.message);
+    }
+  }
+
   // ── IMPORT ────────────────────────────────────────────────────
   async function handleImport(e) {
     const file = e.target.files[0];
@@ -413,11 +432,14 @@ export default function Students() {
                         <td>
                           <div style={{ display: 'flex', gap: 5 }}>
                             <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('edit'); }}>Edit</button>
-                            {!cls && (
+                            {!cls && s.status !== 'withdrawn' && (
                               <button className="btn btn-primary btn-sm" onClick={() => { setSelected(s); setModal('enroll'); }}>Enroll</button>
                             )}
                             {cls && (
                               <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('enroll'); }}>Re-enroll</button>
+                            )}
+                            {s.status !== 'withdrawn' && (
+                              <button className="btn btn-danger btn-sm" onClick={() => handleRemove(s)}>Remove</button>
                             )}
                           </div>
                         </td>

@@ -9,7 +9,7 @@
 import React, { useState, useRef } from 'react';
 import { useSchool } from '../contexts/SchoolContext';
 import { v4 as uuidv4 } from 'uuid';
-import { writeRecord } from '../services/syncService';
+import { writeRecord, deleteRecord } from '../services/syncService';
 
 const COMMON_SUBJECTS = [
   'English Language', 'Mathematics', 'Integrated Science', 'Social Studies',
@@ -187,6 +187,29 @@ export default function Subjects() {
     await refresh();
   }
 
+  // Removing a subject is a HARD delete (Firestore rules allow it for admins).
+  // Warns the admin if the subject is assigned to any classes, since deleting
+  // it removes it from the score entry grid and reports going forward.
+  // Any scores already entered for this subject remain in the database for
+  // historical/audit purposes, but will no longer appear in NEW reports
+  // since report generation looks up subjects by current assignment.
+  async function handleRemoveSubject(subject) {
+    const assignedCount = classes.filter(c => subject.classIds?.includes(c.id) || c.subjectIds?.includes(subject.id)).length;
+    const warning = assignedCount > 0
+      ? `"${subject.name}" is assigned to ${assignedCount} class(es).\n\n` +
+        `Deleting it will remove it from score entry and future reports for those classes. ` +
+        `Previously entered scores remain in the database for historical records.\n\n` +
+        `Delete "${subject.name}" anyway?`
+      : `Delete subject "${subject.name}"? This cannot be undone.`;
+    if (!window.confirm(warning)) return;
+    try {
+      await deleteRecord('subjects', subject.id);
+      await refresh();
+    } catch (err) {
+      alert('Failed to delete subject: ' + err.message);
+    }
+  }
+
   async function handleQuickAdd(e) {
     e.preventDefault();
     if (!quickName.trim()) return;
@@ -311,7 +334,10 @@ export default function Subjects() {
                         }
                       </td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(s)}>Edit</button>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(s)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleRemoveSubject(s)}>Remove</button>
+                        </div>
                       </td>
                     </tr>
                   );
