@@ -32,6 +32,10 @@ const STYLE_DEFAULTS = {
   showLogo:        true,
   showWatermark:   false,
   headerBg:        '#ffffff',
+  tableBorderWidth:  0.2,
+  tableBorderColor:  '#b4b4b4',
+  tableCellPaddingV: 2,
+  tableCellPaddingH: 3,
 };
 
 function hexToRgb(hex) {
@@ -103,7 +107,12 @@ export async function generateStudentReportPDF(
   const HEADER_BG = hexToRgb(S.tableHeaderBg);
   const HEADER_TX = hexToRgb(S.tableHeaderText);
   const LGRAY     = [230, 230, 230];
-  const MGRAY     = [180, 180, 180];
+  // MGRAY is now driven by the admin's chosen table border color
+  // (defaults to the same grey as before if not customized)
+  const MGRAY     = hexToRgb(S.tableBorderColor);
+  const TBW       = S.tableBorderWidth;              // table border width (mm)
+  const TPV       = S.tableCellPaddingV;              // cell padding vertical (mm)
+  const TPH       = S.tableCellPaddingH;              // cell padding horizontal (mm)
   const BLACK     = [20, 20, 20];
   const WHITE     = [255, 255, 255];
 
@@ -207,6 +216,42 @@ export async function generateStudentReportPDF(
   doc.text('QUANTITATIVE ASSESSMENT', pageW / 2, y, { align: 'center' });
   y += 3;
 
+  // Determine the class/exam % weighting to show in the table header.
+  // Each subject can have its OWN weighting (e.g. Maths 30/70, French 50/50),
+  // set by the admin in the Subjects page via maxClassScore/maxExamScore.
+  // Rather than guessing one school-wide number, we:
+  //   1. Compute the real % for the MOST COMMON weighting among this
+  //      student's subjects (so the header is accurate for the majority).
+  //   2. If subjects have DIFFERENT weightings, each row's REMARKS-adjacent
+  //      header cell still reflects the true total for that subject's own
+  //      max scores — the total score (100%) column is always correct
+  //      regardless, since it's just classScore + examScore.
+  const subjectResultsList = result.subjectResults || [];
+  const weightCounts = {};
+  subjectResultsList.forEach(sr => {
+    const cMax = sr.maxClassScore ?? 30;
+    const eMax = sr.maxExamScore  ?? 70;
+    const total = cMax + eMax || 100;
+    const cPct  = Math.round((cMax / total) * 100);
+    const ePct  = Math.round((eMax / total) * 100);
+    const key   = `${cPct}-${ePct}`;
+    weightCounts[key] = (weightCounts[key] || 0) + 1;
+  });
+  // Pick the weighting used by the most subjects (mode)
+  let dominantWeight = { classPct: 50, examPct: 50 };
+  let maxCount = 0;
+  Object.entries(weightCounts).forEach(([key, count]) => {
+    if (count > maxCount) {
+      maxCount = count;
+      const [c, e] = key.split('-').map(Number);
+      dominantWeight = { classPct: c, examPct: e };
+    }
+  });
+  // If every subject shares the SAME weighting, this is 100% accurate.
+  // If subjects differ, this shows the majority weighting in the header,
+  // while each row's own classScore/examScore values remain exactly correct.
+  const allSameWeight = Object.keys(weightCounts).length <= 1;
+
   const subjectRows = (result.subjectResults || []).map(sr => {
     const grInfo = applyGradingScale(sr.total || 0, gradingScale);
     const gNo    = gradeNo(grInfo.grade, gradingScale);
@@ -225,8 +270,8 @@ export async function generateStudentReportPDF(
     startY: y,
     head: [[
       'SUBJECT',
-      `CLASS SCORE\n(${school?.classScorePercent || 50}%)`,
-      `EXAM SCORE\n(${school?.examScorePercent  || 50}%)`,
+      `CLASS SCORE\n(${dominantWeight.classPct}%)`,
+      `EXAM SCORE\n(${dominantWeight.examPct}%)`,
       'TOTAL SCORE\n(100%)',
       'GRADE',
       'GRADE NO.',
@@ -236,14 +281,14 @@ export async function generateStudentReportPDF(
     margin: { left: margin, right: margin },
     headStyles: {
       fillColor: HEADER_BG, textColor: HEADER_TX,
-      lineColor: MGRAY, lineWidth: 0.2,
+      lineColor: MGRAY, lineWidth: TBW,
       fontSize: S.fontSize - 0.5, fontStyle: 'bold',
-      halign: 'center', valign: 'middle', cellPadding: 2, font: fontName,
+      halign: 'center', valign: 'middle', cellPadding: TPV, font: fontName,
     },
     bodyStyles: {
       fontSize: S.fontSize, textColor: BLACK,
-      lineColor: LGRAY, lineWidth: 0.2,
-      cellPadding: { top: 2, bottom: 2, left: 3, right: 2 }, font: fontName,
+      lineColor: MGRAY, lineWidth: TBW,
+      cellPadding: { top: TPV, bottom: TPV, left: TPH, right: TPH - 1 }, font: fontName,
     },
     alternateRowStyles: { fillColor: [250, 250, 252] },
     columnStyles: {
@@ -255,10 +300,24 @@ export async function generateStudentReportPDF(
       5: { halign: 'center', cellWidth: 18 },
       6: { halign: 'center' },
     },
-    tableLineColor: MGRAY, tableLineWidth: 0.2,
+    tableLineColor: MGRAY, tableLineWidth: TBW,
   });
 
-  y = doc.lastAutoTable.finalY + 6;
+  y = doc.lastAutoTable.finalY + (allSameWeight ? 6 : 3);
+
+  // If subjects use different class/exam weightings, show a footnote so
+  // parents understand the header % is the majority, not universal.
+  if (!allSameWeight) {
+    doc.setFontSize(S.fontSize - 2);
+    doc.setFont(fontName, 'italic');
+    doc.setTextColor(120, 120, 120);
+    doc.text(
+      '* Class/Exam weighting varies by subject as configured by the school.',
+      margin, y
+    );
+    doc.setTextColor(...BLACK);
+    y += 4;
+  }
 
   // ── GRADES LEGEND + QUALITATIVE side-by-side ──────────────────
   const leftW  = cW * 0.42;
@@ -276,21 +335,21 @@ export async function generateStudentReportPDF(
     tableWidth: leftW,
     headStyles: {
       fillColor: HEADER_BG, textColor: HEADER_TX,
-      lineColor: MGRAY, lineWidth: 0.2,
+      lineColor: MGRAY, lineWidth: TBW,
       fontSize: S.fontSize - 1.5, fontStyle: 'bold',
-      halign: 'center', cellPadding: 1.5, font: fontName,
+      halign: 'center', cellPadding: Math.max(0.5, TPV - 0.5), font: fontName,
     },
     bodyStyles: {
       fontSize: S.fontSize - 1.5, textColor: BLACK,
-      lineColor: LGRAY, lineWidth: 0.15,
-      cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 }, font: fontName,
+      lineColor: MGRAY, lineWidth: TBW,
+      cellPadding: { top: Math.max(0.5, TPV - 0.8), bottom: Math.max(0.5, TPV - 0.8), left: Math.max(0.5, TPH - 1), right: Math.max(0.5, TPH - 1) }, font: fontName,
     },
     columnStyles: {
       0: { cellWidth: leftW * 0.34 },
       1: { cellWidth: leftW * 0.34, halign: 'center' },
       2: { halign: 'center' },
     },
-    tableLineColor: MGRAY, tableLineWidth: 0.2,
+    tableLineColor: MGRAY, tableLineWidth: TBW,
   });
 
   const gradesBottom = doc.lastAutoTable.finalY;
@@ -314,14 +373,14 @@ export async function generateStudentReportPDF(
     tableWidth: rightW,
     headStyles: {
       fillColor: HEADER_BG, textColor: HEADER_TX,
-      lineColor: MGRAY, lineWidth: 0.2,
+      lineColor: MGRAY, lineWidth: TBW,
       fontSize: S.fontSize - 1.5, fontStyle: 'bold',
-      halign: 'center', cellPadding: 1.5, font: fontName,
+      halign: 'center', cellPadding: Math.max(0.5, TPV - 0.5), font: fontName,
     },
     bodyStyles: {
       fontSize: S.fontSize - 1.5, textColor: BLACK,
-      lineColor: LGRAY, lineWidth: 0.15,
-      cellPadding: { top: 2.5, bottom: 2.5, left: 2, right: 2 }, font: fontName,
+      lineColor: MGRAY, lineWidth: TBW,
+      cellPadding: { top: TPV, bottom: TPV, left: Math.max(0.5, TPH - 1), right: Math.max(0.5, TPH - 1) }, font: fontName,
     },
     columnStyles: {
       0: { cellWidth: rightW * 0.52 },
@@ -329,7 +388,7 @@ export async function generateStudentReportPDF(
       2: { cellWidth: rightW * 0.16, halign: 'center' },
       3: { halign: 'center' },
     },
-    tableLineColor: MGRAY, tableLineWidth: 0.2,
+    tableLineColor: MGRAY, tableLineWidth: TBW,
   });
 
   y = Math.max(gradesBottom, doc.lastAutoTable.finalY) + 6;
@@ -411,6 +470,10 @@ export async function generateClassReportPDF(classInfo, results, students, schoo
 
   const HEADER_BG = hexToRgb(S.tableHeaderBg);
   const HEADER_TX = hexToRgb(S.tableHeaderText);
+  const MGRAY     = hexToRgb(S.tableBorderColor);
+  const TBW       = S.tableBorderWidth;
+  const TPV       = S.tableCellPaddingV;
+  const TPH       = S.tableCellPaddingH;
   const fontName  = S.font || 'helvetica';
   const margin    = 12;
 
@@ -443,9 +506,19 @@ export async function generateClassReportPDF(classInfo, results, students, schoo
     head: headers,
     body: rows,
     margin: { left: margin, right: margin },
-    headStyles: { fillColor: HEADER_BG, textColor: HEADER_TX, fontSize: S.fontSize, fontStyle: 'bold', font: fontName },
-    bodyStyles: { fontSize: S.fontSize, cellPadding: 2, font: fontName },
+    headStyles: {
+      fillColor: HEADER_BG, textColor: HEADER_TX,
+      lineColor: MGRAY, lineWidth: TBW,
+      fontSize: S.fontSize, fontStyle: 'bold', font: fontName,
+      cellPadding: TPV,
+    },
+    bodyStyles: {
+      fontSize: S.fontSize, font: fontName,
+      lineColor: MGRAY, lineWidth: TBW,
+      cellPadding: { top: TPV, bottom: TPV, left: TPH, right: TPH - 1 },
+    },
     alternateRowStyles: { fillColor: [245, 248, 255] },
+    tableLineColor: MGRAY, tableLineWidth: TBW,
   });
 
   return doc;

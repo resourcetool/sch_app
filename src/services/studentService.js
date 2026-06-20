@@ -148,3 +148,27 @@ export async function updateEnrollmentStatus(schoolId, enrollmentId, status) {
   await writeRecord('enrollments', enrollmentId, updated, schoolId);
   return updated;
 }
+
+// ── REMOVE STUDENT ─────────────────────────────────────────────────
+// Soft-delete: marks the student as 'withdrawn' rather than hard-deleting
+// the Firestore document. This preserves their score and result history
+// (Firestore rules block hard delete on students for this exact reason —
+// removing a student record would orphan their past scores/results).
+// Also withdraws their active enrollment so they disappear from class
+// rosters and score entry grids going forward.
+export async function removeStudent(schoolId, studentId) {
+  const student = await idbGet('students', studentId);
+  if (!student) throw new Error('Student not found');
+
+  // Mark student as withdrawn
+  const updated = { ...student, status: 'withdrawn', withdrawnAt: Date.now() };
+  await writeRecord('students', studentId, updated, schoolId);
+
+  // Withdraw any active enrollment for this student too
+  const enrollments = await getEnrollments(schoolId, { studentId, status: 'active' });
+  for (const enr of enrollments) {
+    await updateEnrollmentStatus(schoolId, enr.id, 'withdrawn');
+  }
+
+  return updated;
+}

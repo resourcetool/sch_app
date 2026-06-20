@@ -170,6 +170,12 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
         classScore:  score?.classScore ?? 0,
         examScore:   score?.examScore  ?? 0,
         total:       rawTotal,
+        // Store the subject's REAL configured max scores (set by admin in
+        // Subjects page, e.g. 30/70 or 50/50). The report PDF uses these to
+        // show the true class/exam % weighting per subject instead of a
+        // static school-wide default that was never updated.
+        maxClassScore: subject.maxClassScore ?? 30,
+        maxExamScore:  subject.maxExamScore  ?? 70,
         ...gradeInfo,
       });
       totalScore += rawTotal;
