@@ -22,6 +22,10 @@ const DEFAULTS = {
   showLogo:       true,
   showWatermark:  false,
   headerBg:       '#ffffff',
+  tableBorderWidth:  0.2,
+  tableBorderColor:  '#b4b4b4',
+  tableCellPaddingV: 2,
+  tableCellPaddingH: 3,
 };
 
 const SIGNATORIES = [
@@ -331,6 +335,59 @@ export default function ReportCustomizer({ onClose }) {
                       </button>
                     ))}
                   </div>
+                  <span style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 4, display: 'block' }}>
+                    This controls the outer page border around the whole report card.
+                  </span>
+                </div>
+
+                <div className="form-group full" style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
+                  <span style={{ fontWeight: 700, color: 'var(--navy)', fontSize: '.88rem' }}>Table Borders &amp; Padding</span>
+                  <p style={{ fontSize: '.76rem', color: 'var(--text-lt)', margin: '4px 0 0' }}>
+                    Controls the grid lines and spacing inside the Quantitative Assessment, Grades, and Conduct tables.
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label>Table Border Width (mm)</label>
+                  <input
+                    type="number" min="0" max="1" step="0.05"
+                    value={style.tableBorderWidth}
+                    onChange={e => up('tableBorderWidth', Number(e.target.value))}
+                  />
+                  <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>0 = no grid lines, 0.2 = thin (default), 0.5+ = bold</span>
+                </div>
+
+                <div className="form-group">
+                  <label>Table Border Color</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <input
+                      type="color"
+                      value={style.tableBorderColor}
+                      onChange={e => up('tableBorderColor', e.target.value)}
+                      style={{ width: 36, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}
+                    />
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '.75rem', color: 'var(--text-lt)' }}>{style.tableBorderColor}</span>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Cell Padding — Vertical (mm)</label>
+                  <input
+                    type="number" min="0" max="6" step="0.5"
+                    value={style.tableCellPaddingV}
+                    onChange={e => up('tableCellPaddingV', Number(e.target.value))}
+                  />
+                  <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Space above/below text in each cell</span>
+                </div>
+
+                <div className="form-group">
+                  <label>Cell Padding — Horizontal (mm)</label>
+                  <input
+                    type="number" min="0" max="8" step="0.5"
+                    value={style.tableCellPaddingH}
+                    onChange={e => up('tableCellPaddingH', Number(e.target.value))}
+                  />
+                  <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Space left/right of text in each cell</span>
                 </div>
 
                 <div className="form-group">
@@ -356,23 +413,23 @@ export default function ReportCustomizer({ onClose }) {
                   <span style={{ color: style.primaryColor, fontWeight: 700 }}>Student Name: </span>Sample Student &nbsp;|&nbsp;
                   <span style={{ color: style.primaryColor, fontWeight: 700 }}>Class: </span>JHS 1
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: style.fontSize * 1.2 + 'px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: style.fontSize * 1.2 + 'px', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>
                   <thead>
                     <tr style={{ background: style.tableHeaderBg, color: style.tableHeaderText }}>
-                      <th style={{ padding: '4px 8px', textAlign: 'left' }}>Subject</th>
-                      <th style={{ padding: '4px 8px', textAlign: 'center' }}>Class</th>
-                      <th style={{ padding: '4px 8px', textAlign: 'center' }}>Exam</th>
-                      <th style={{ padding: '4px 8px', textAlign: 'center' }}>Total</th>
-                      <th style={{ padding: '4px 8px', textAlign: 'center' }}>Grade</th>
+                      <th style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'left', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>Subject</th>
+                      <th style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>Class</th>
+                      <th style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>Exam</th>
+                      <th style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>Total</th>
+                      <th style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>Grade</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[['Mathematics','28.00','65.00','93.00','A1'],['English','24.50','58.00','82.50','B2']].map(([s,c,e,t,g]) => (
-                      <tr key={s} style={{ borderBottom: `1px solid #eee` }}>
-                        <td style={{ padding: '3px 8px' }}>{s}</td>
-                        <td style={{ padding: '3px 8px', textAlign: 'center' }}>{c}</td>
-                        <td style={{ padding: '3px 8px', textAlign: 'center' }}>{e}</td>
-                        <td style={{ padding: '3px 8px', textAlign: 'center', fontWeight: 700 }}>{t}</td>
+                      <tr key={s}>
+                        <td style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>{s}</td>
+                        <td style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>{c}</td>
+                        <td style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>{e}</td>
+                        <td style={{ padding: `${style.tableCellPaddingV * 1.5}px ${style.tableCellPaddingH * 2}px`, textAlign: 'center', fontWeight: 700, border: `${style.tableBorderWidth * 2}px solid ${style.tableBorderColor}` }}>{t}</td>
                         <td style={{ padding: '3px 8px', textAlign: 'center', color: style.accentColor, fontWeight: 700 }}>{g}</td>
                       </tr>
                     ))}
