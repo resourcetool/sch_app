@@ -12,27 +12,27 @@ export default function SubscriptionBanner() {
     expiring: {
       bg: '#fff8e1', border: '#f5a623', color: '#7d5400',
       icon: '⏰',
-      text: `Your ${plan.name} plan expires in ${days} day${days !== 1 ? 's' : ''}. Contact 024XXXXXXX to renew.`
+      text: `Your ${plan.name} plan expires in ${days} day${days !== 1 ? 's' : ''}. Contact 0549271528 to renew.`
     },
     grace: {
       bg: '#fce4ec', border: '#e74c3c', color: '#c0392b',
       icon: '🔒',
-      text: `Your subscription has expired. System is in read-only mode. Contact 024XXXXXXX to renew.`
+      text: `Your subscription has expired. System is in read-only mode. Contact 0549271528 to renew.`
     },
     expired: {
       bg: '#fce4ec', border: '#e74c3c', color: '#c0392b',
       icon: '🔒',
-      text: `Your subscription has expired. System is in read-only mode. Contact 024XXXXXXX to renew.`
+      text: `Your subscription has expired. System is in read-only mode. Contact 0549271528 to renew.`
     },
     suspended: {
       bg: '#f3e5f5', border: '#8e44ad', color: '#6c3483',
       icon: '⛔',
-      text: `Your account has been suspended. Contact 024XXXXXXX for assistance.`
+      text: `Your account has been suspended. Contact 0549271528 for assistance.`
     },
     trial: {
       bg: '#e3f2fd', border: '#2980b9', color: '#1a5276',
       icon: '🎯',
-      text: `Free trial — ${days} day${days !== 1 ? 's' : ''} remaining. Limited to 50 students. Contact 024XXXXXXX to upgrade.`
+      text: `Free trial — ${days} day${days !== 1 ? 's' : ''} remaining. Limited to 50 students. Contact 0549271528 to upgrade.`
     }
   };
 

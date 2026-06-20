@@ -88,7 +88,7 @@ export default function SubscriptionExpired() {
               textDecoration: 'none', fontSize: '.9rem'
             }}
           >
-            📱 WhatsApp to Renew — 024XXXXXXX
+            📱 WhatsApp to Renew — 0549271528
           </a>
           <a
             href="tel:+233240000000"
@@ -98,7 +98,7 @@ export default function SubscriptionExpired() {
               textDecoration: 'none', fontSize: '.9rem'
             }}
           >
-            📞 Call — 024XXXXXXX
+            📞 Call — 0549271528
           </a>
         </div>
 

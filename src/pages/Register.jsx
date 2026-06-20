@@ -205,7 +205,7 @@ export default function Register() {
                 </div>
                 <div className="form-group">
                   <label>Phone</label>
-                  <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="024XXXXXXX" />
+                  <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="0549271528" />
                 </div>
                 <div className="form-group">
                   <label>Password *</label>

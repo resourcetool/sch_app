@@ -144,7 +144,7 @@ export default function RequestAccess() {
             </div>
             <div className="form-group">
               <label>Phone (MoMo) *</label>
-              <input required value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="024XXXXXXX" />
+              <input required value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="0549271528" />
             </div>
             <div className="form-group full">
               <label>Email</label>

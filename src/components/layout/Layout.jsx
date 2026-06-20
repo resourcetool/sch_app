@@ -206,7 +206,7 @@ export default function Layout() {
             <span>⏰</span>
             <span>
               Your subscription expires in <strong>{days} day{days !== 1 ? 's' : ''}</strong>.
-              Contact 024XXXXXXX to renew.
+              Contact 0549271528 to renew.
             </span>
             <a
               href="https://wa.me/233240000000" target="_blank" rel="noreferrer"

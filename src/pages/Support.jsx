@@ -12,7 +12,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const SUPPORT_EMAIL = 'schoolpilot132@gmail.com';
-const SUPPORT_PHONE = '0549548274';
+const SUPPORT_PHONE = '0549271528';
 const SUPPORT_PHONE_INTL = '233549548274'; // for wa.me links (Ghana country code, no leading 0)
 
 // ── GUIDE STEP CARD ───────────────────────────────────────────────
