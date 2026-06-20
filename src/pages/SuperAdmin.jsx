@@ -458,7 +458,7 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
 // ── MAIN SUPER ADMIN PAGE ─────────────────────────────────────────
 
 export default function SuperAdmin() {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, logout } = useAuth();
   const navigate = useNavigate();
 
   const [tab,      setTab]      = useState('schools');
@@ -472,6 +472,12 @@ export default function SuperAdmin() {
   const [selected, setSelected] = useState(null);
   // For prefilling the generate-code modal from a request approval
   const [generatePrefill, setGeneratePrefill] = useState({ schoolName: '', plan: 'pro' });
+
+  async function handleLogout() {
+    if (!window.confirm('Sign out of Super Admin?')) return;
+    await logout();
+    navigate('/login');
+  }
 
   // Guard — only super admin can access
   useEffect(() => {
@@ -600,6 +606,13 @@ export default function SuperAdmin() {
               ← School View
             </button>
           )}
+          <button
+            onClick={handleLogout}
+            className="btn btn-ghost btn-sm"
+            style={{ color: '#fff', borderColor: 'rgba(255,255,255,.2)' }}
+          >
+            🚪 Sign Out
+          </button>
         </div>
       </div>
 
