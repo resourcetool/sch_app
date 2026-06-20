@@ -29,6 +29,8 @@ const ADMIN_NAV = [
   { to: '/assessments', icon: '📅', label: 'Deadlines'  },
   { to: '/backup',      icon: '💾', label: 'Backup',    feature: 'backup' },
   { to: '/settings',    icon: '⚙️', label: 'Settings'   },
+  { section: 'Help' },
+  { to: '/support',     icon: '🆘', label: 'Help & Support' },
 ];
 
 // Restricted nav for teachers
@@ -38,6 +40,8 @@ const TEACHER_NAV = [
   { to: '/scores',    icon: '✏️', label: 'Score Entry' },
   { to: '/reports',   icon: '📄', label: 'Reports'    },
   { to: '/analytics', icon: '📈', label: 'Analytics'  },
+  { section: 'Help' },
+  { to: '/support',   icon: '🆘', label: 'Help & Support' },
 ];
 
 const NAV = ADMIN_NAV; // default; actual selection done below
