@@ -17,7 +17,7 @@ import {
 import { db } from './firebase';
 import {
   getPendingSyncOps, markSyncOpComplete, markSyncOpFailed,
-  enqueueSyncOperation, idbPut, idbGetAll, idbPutMany
+  enqueueSyncOperation, idbPut, idbGetAll, idbPutMany, idbDelete
 } from './indexedDB';
 
 let isSyncing   = false;
@@ -120,7 +120,19 @@ export async function writeRecord(collectionName, docId, data, schoolId) {
 }
 
 // ── DELETE RECORD ─────────────────────────────────────────────────
+// CRITICAL FIX: This function previously only deleted from Firestore,
+// never from local IndexedDB. Since every page reads from IDB first
+// (idbGetAll), the "deleted" item stayed visible in IDB and reappeared
+// immediately after refresh() — making it LOOK like delete did nothing,
+// even though Firestore deletion may have actually succeeded.
+//
+// Now: delete from IDB immediately (so UI updates instantly), then
+// delete from Firestore (or queue if offline).
 export async function deleteRecord(collectionName, docId) {
+  // 1. Always remove from IDB first — this is what makes the UI update
+  await idbDelete(collectionName, docId);
+
+  // 2. Remove from Firestore (the permanent store)
   if (navigator.onLine) {
     try {
       await deleteDoc(doc(db, collectionName, docId));
