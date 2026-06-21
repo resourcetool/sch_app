@@ -16,6 +16,7 @@ import { isSuperAdmin }                             from './services/superAdminS
 import Layout                                       from './components/layout/Layout';
 import Login                                        from './pages/Login';
 import Register                                     from './pages/Register';
+import TrialSignup                                  from './pages/TrialSignup';
 import RequestAccess                                from './pages/RequestAccess';
 import Dashboard                                    from './pages/Dashboard';
 import Students                                     from './pages/Students';
@@ -70,6 +71,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/login"          element={<Login />} />
         <Route path="/register"       element={<Register />} />
+        <Route path="/trial"          element={<TrialSignup />} />
         <Route path="/request-access" element={<RequestAccess />} />
         <Route path="*"               element={<Navigate to="/login" replace />} />
       </Routes>
@@ -105,6 +107,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login"          element={<Navigate to="/dashboard" replace />} />
       <Route path="/register"       element={<Navigate to="/dashboard" replace />} />
+      <Route path="/trial"          element={<Navigate to="/dashboard" replace />} />
       <Route path="/request-access" element={<RequestAccess />} />
       <Route element={<SchoolApp />}>
         <Route path="/"             element={<Navigate to="/dashboard" replace />} />
