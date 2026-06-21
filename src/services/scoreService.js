@@ -19,6 +19,7 @@ import { v4 as uuidv4 }  from 'uuid';
 import { idbGetAll, idbGet, idbPutMany } from './indexedDB';
 import { writeRecord, getScoresFromFirestore } from './syncService';
 import { validateTeacherCanSubmit } from './assessmentService';
+import { checkAndEndTrialOnMilestone } from './subscriptionService';
 
 // ── SCORE CRUD ────────────────────────────────────────────────────
 
@@ -217,6 +218,17 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
   // ── 7. Analytics snapshot ─────────────────────────────────────
   await storeAnalyticsSnapshot(schoolId, classId, academicYear, term, savedResults, classSubjects);
 
+  // ── 8. TRIAL MILESTONE: first report generated ends the trial ──
+  // If this school is on a trial, generating a report for the first
+  // time is one of the three trial-ending triggers (whichever comes
+  // first: first report, first finalized assessment, or 21 days).
+  // This is a no-op for non-trial schools or already-ended trials.
+  try {
+    await checkAndEndTrialOnMilestone(schoolId, 'first_report');
+  } catch (err) {
+    console.warn('[Trial] Could not check/end trial on report milestone:', err.message);
+  }
+
   return savedResults;
 }
 
@@ -252,6 +264,15 @@ export async function finalizeResults(schoolId, classId, academicYear, term) {
   const results = await getResultsForClass(schoolId, classId, academicYear, term);
   for (const r of results) {
     await writeRecord('results', r.id, { ...r, isFinalized: true }, schoolId);
+  }
+
+  // ── TRIAL MILESTONE: first full class assessment completed ─────
+  // Finalizing results for a whole class is the second of the three
+  // trial-ending triggers. No-op for non-trial schools.
+  try {
+    await checkAndEndTrialOnMilestone(schoolId, 'first_assessment_finalized');
+  } catch (err) {
+    console.warn('[Trial] Could not check/end trial on finalize milestone:', err.message);
   }
 }
 

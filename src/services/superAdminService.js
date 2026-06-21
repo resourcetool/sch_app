@@ -242,6 +242,69 @@ export async function activateSchool(schoolId, schoolName, plan, adminEmail, pay
   return subscription;
 }
 
+// ── FREE TRIAL (self-serve, no registration code needed) ──────────
+//
+// Fairness & anti-fraud design:
+// - One trial per email AND per phone number — checked before creating.
+//   A school that already used a trial (even under a different school
+//   name) cannot start a second one with the same contact details.
+// - Trial subscription is created the same way a paid one is — same
+//   shape, same enforcement — so there is no special "free path" that
+//   bypasses normal expiry/lockout logic. It expires exactly like a
+//   paid plan would, just with $0 charged.
+// - No payment details are collected or stored at trial signup. There is
+//   no auto-charge: MoMo has no stored-card billing, so nothing happens
+//   automatically when the trial ends except read-only lockout — the
+//   school always chooses if/when to pay.
+export async function checkTrialEligibility(email, phone) {
+  const normalisedEmail = email.trim().toLowerCase();
+  const normalisedPhone = phone.replace(/\D/g, ''); // digits only
+
+  const q1 = query(collection(db, 'subscriptions'), where('trialEmail', '==', normalisedEmail));
+  const q2 = query(collection(db, 'subscriptions'), where('trialPhone', '==', normalisedPhone));
+
+  const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+
+  if (!snap1.empty) {
+    return { eligible: false, reason: 'A free trial has already been used with this email address.' };
+  }
+  if (!snap2.empty) {
+    return { eligible: false, reason: 'A free trial has already been used with this phone number.' };
+  }
+  return { eligible: true };
+}
+
+export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhone) {
+  const eligibility = await checkTrialEligibility(adminEmail, adminPhone);
+  if (!eligibility.eligible) {
+    throw new Error(eligibility.reason);
+  }
+
+  const plan_data = PLANS.trial;
+  const now       = Date.now();
+  const expiresAt = now + plan_data.durationDays * 24 * 60 * 60 * 1000;
+
+  const subscription = {
+    id:           schoolId,
+    schoolId,
+    schoolName,
+    plan:         'trial',
+    status:       'active',
+    backupAddon:  false,
+    activatedAt:  now,
+    expiresAt,
+    renewedAt:    now,
+    adminEmail,
+    trialEmail:   adminEmail.trim().toLowerCase(),
+    trialPhone:   adminPhone.replace(/\D/g, ''),
+    isTrial:      true,
+    paymentHistory: [],
+  };
+
+  await setDoc(doc(db, 'subscriptions', schoolId), subscription);
+  return subscription;
+}
+
 export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false) {
   const snap = await getDoc(doc(db, 'subscriptions', schoolId));
   if (!snap.exists()) throw new Error('School subscription not found');
