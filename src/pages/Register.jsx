@@ -139,8 +139,31 @@ export default function Register() {
         {/* ── STEP 1: Validate Code ── */}
         {step === 1 && (
           <>
+            {/* Trial alternative — shown prominently since registration code
+                signup is now specifically for schools that have already paid
+                or are converting from a trial, not the only way in. */}
+            <div style={{
+              background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 12,
+              padding: '14px 18px', marginBottom: 20, display: 'flex',
+              alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '.85rem', color: '#0d47a1' }}>🎁 New school? Try it free first</div>
+                <div style={{ fontSize: '.78rem', color: '#1565c0' }}>No code, no card needed — just sign up and start using it.</div>
+              </div>
+              <Link
+                to="/trial"
+                style={{
+                  background: '#0d47a1', color: '#fff', padding: '8px 16px', borderRadius: 8,
+                  fontWeight: 700, fontSize: '.82rem', textDecoration: 'none', whiteSpace: 'nowrap',
+                }}
+              >
+                Start Free Trial →
+              </Link>
+            </div>
+
             <h2>Enter Access Code</h2>
-            <p className="sub">Received from your provider after payment confirmation.</p>
+            <p className="sub">For schools converting from a trial, or already paying. Received from your provider after payment confirmation.</p>
             <form onSubmit={handleValidateCode} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div className="form-group">
                 <label>School Name *</label>
@@ -175,7 +198,7 @@ export default function Register() {
               </button>
             </form>
             <div style={{ marginTop: 16, textAlign: 'center' }}>
-              <Link to="/request-access" style={{ color: 'var(--navy)', fontSize: '.84rem' }}>No code? Request access →</Link><br />
+              <Link to="/request-access" style={{ color: 'var(--navy)', fontSize: '.84rem' }}>Need a paid plan code? Request access →</Link><br />
               <Link to="/login" style={{ color: 'var(--text-lt)', fontSize: '.8rem', marginTop: 6, display: 'inline-block' }}>← Back to login</Link>
             </div>
           </>
@@ -205,7 +228,7 @@ export default function Register() {
                 </div>
                 <div className="form-group">
                   <label>Phone</label>
-                  <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="0549271528" />
+                  <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="024XXXXXXX" />
                 </div>
                 <div className="form-group">
                   <label>Password *</label>
