@@ -438,3 +438,69 @@ export async function updateRequestStatus(requestId, status, adminEmail = '') {
 export async function deleteAccessRequest(requestId) {
   await deleteDoc(doc(db, 'accessRequests', requestId));
 }
+
+// ── SUPER ADMIN: FULL DATA ACCESS ────────────────────────────────
+// These functions give super admin complete visibility and control
+// over every school's operational data (students, teachers, classes,
+// subjects, scores, results, enrollments). School admins and teachers
+// never have access to these — they are super-admin-only.
+
+export async function getSuperAdminSchoolData(schoolId) {
+  // Fetch all operational collections for a school in parallel
+  const COLLECTIONS = [
+    'students', 'teachers', 'classes', 'subjects',
+    'enrollments', 'scores', 'results', 'promotions', 'analytics',
+  ];
+  const snaps = await Promise.all(
+    COLLECTIONS.map(c =>
+      getDocs(query(collection(db, c), where('schoolId', '==', schoolId)))
+    )
+  );
+  const data = {};
+  COLLECTIONS.forEach((c, i) => {
+    data[c] = snaps[i].docs.map(d => ({ id: d.id, ...d.data() }));
+  });
+  return data;
+}
+
+export async function superAdminDeleteDoc(collectionName, docId) {
+  await deleteDoc(doc(db, collectionName, docId));
+}
+
+export async function superAdminUpdateDoc(collectionName, docId, data) {
+  await updateDoc(doc(db, collectionName, docId), {
+    ...data,
+    _superAdminUpdatedAt: Date.now(),
+  });
+}
+
+export async function superAdminDeleteSchool(schoolId) {
+  // Hard-deletes the school AND all its operational data.
+  // Use only for confirmed fraud/test accounts or data-removal requests.
+  // This is irreversible.
+  const COLLECTIONS = [
+    'students', 'teachers', 'classes', 'subjects',
+    'enrollments', 'scores', 'results', 'promotions', 'analytics',
+    'assessmentDeadlines', 'assessmentAuditLog',
+  ];
+
+  const batch = writeBatch(db);
+
+  for (const c of COLLECTIONS) {
+    const snap = await getDocs(
+      query(collection(db, c), where('schoolId', '==', schoolId))
+    );
+    snap.docs.forEach(d => batch.delete(d.ref));
+  }
+
+  // Also delete school, subscription, users of this school
+  const usersSnap = await getDocs(
+    query(collection(db, 'users'), where('schoolId', '==', schoolId))
+  );
+  usersSnap.docs.forEach(d => batch.delete(d.ref));
+
+  batch.delete(doc(db, 'schools',       schoolId));
+  batch.delete(doc(db, 'subscriptions', schoolId));
+
+  await batch.commit();
+}
