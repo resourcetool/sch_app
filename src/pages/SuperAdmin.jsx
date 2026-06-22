@@ -17,6 +17,7 @@ import {
   createRegistrationCode, renewSubscription, suspendSchool,
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
   addSuperAdminNote, getSchoolDetails, deleteAccessRequest,
+  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool,
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
@@ -457,6 +458,298 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
 
 // ── MAIN SUPER ADMIN PAGE ─────────────────────────────────────────
 
+// ── SCHOOL DATA BROWSER ──────────────────────────────────────────
+// Gives super admin complete visibility and control over every school's
+// operational data. Select a school → see all students, teachers,
+// classes, subjects, scores, results, enrollments. Can hard-delete
+// individual records or the entire school (with double-confirm).
+const DATA_TABS = [
+  { key: 'students',    label: '👥 Students'    },
+  { key: 'teachers',    label: '👨‍🏫 Teachers'    },
+  { key: 'classes',     label: '🏫 Classes'     },
+  { key: 'subjects',    label: '📚 Subjects'    },
+  { key: 'enrollments', label: '📋 Enrollments' },
+  { key: 'scores',      label: '✏️ Scores'      },
+  { key: 'results',     label: '📄 Results'     },
+];
+
+function SchoolDataBrowser({ schools }) {
+  const [selectedSchoolId, setSelectedSchoolId] = useState('');
+  const [data,             setData]             = useState(null);
+  const [loadingData,      setLoadingData]       = useState(false);
+  const [dataTab,          setDataTab]           = useState('students');
+  const [dataError,        setDataError]         = useState('');
+  const [search,           setSearch]            = useState('');
+
+  async function loadSchoolData(schoolId) {
+    if (!schoolId) { setData(null); return; }
+    setLoadingData(true); setDataError(''); setData(null);
+    try {
+      const d = await getSuperAdminSchoolData(schoolId);
+      setData(d);
+    } catch (err) {
+      setDataError('Failed to load school data: ' + err.message);
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  async function handleDeleteRecord(collectionName, docId, label) {
+    if (!window.confirm(
+      `SUPER ADMIN — Delete record from "${collectionName}"?\n\n` +
+      `"${label}"\n\nThis is a PERMANENT hard-delete from Firestore. Cannot be undone.`
+    )) return;
+    try {
+      await superAdminDeleteDoc(collectionName, docId);
+      await loadSchoolData(selectedSchoolId); // refresh
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  }
+
+  async function handleDeleteSchool(school) {
+    const first = window.confirm(
+      `⚠ WARNING — Delete ENTIRE school?\n\n` +
+      `School: ${school.name}\n\n` +
+      `This will permanently delete ALL students, teachers, classes, subjects, ` +
+      `scores, results, and the school account itself from Firestore.\n\n` +
+      `This CANNOT be undone. Click OK to see final confirmation.`
+    );
+    if (!first) return;
+    const confirm2 = window.prompt(
+      `Type the school name exactly to confirm permanent deletion:\n\n${school.name}`
+    );
+    if (confirm2?.trim() !== school.name?.trim()) {
+      alert('School name did not match. Deletion cancelled.');
+      return;
+    }
+    try {
+      await superAdminDeleteSchool(school.id);
+      setData(null);
+      setSelectedSchoolId('');
+      alert('School and all data permanently deleted.');
+    } catch (err) {
+      alert('Delete school failed: ' + err.message);
+    }
+  }
+
+  const selectedSchool = schools.find(s => s.id === selectedSchoolId);
+  const currentRecords = data?.[dataTab] || [];
+  const filtered = search
+    ? currentRecords.filter(r =>
+        JSON.stringify(r).toLowerCase().includes(search.toLowerCase())
+      )
+    : currentRecords;
+
+  // Render a row's key fields for each collection type
+  function renderRow(r) {
+    switch (dataTab) {
+      case 'students':
+        return [`${r.firstName} ${r.lastName}`, r.studentCode, r.gender, r.status];
+      case 'teachers':
+        return [r.firstName + ' ' + r.lastName, r.email, r.phone || '—',
+          (r.assignedClasses?.length || 0) + ' classes'];
+      case 'classes':
+        return [r.name, r.level || '—', r.capacity || '—'];
+      case 'subjects':
+        return [r.name, r.code, `${r.maxClassScore || 30}/${r.maxExamScore || 70}`];
+      case 'enrollments':
+        return [r.studentId?.substring(0, 8) + '…', r.classId?.substring(0, 8) + '…',
+          r.academicYear, `Term ${r.term}`, r.status];
+      case 'scores':
+        return [r.studentId?.substring(0, 8) + '…', r.subjectId?.substring(0, 8) + '…',
+          r.classScore, r.examScore, r.total, r.academicYear, `T${r.term}`];
+      case 'results':
+        return [r.studentId?.substring(0, 8) + '…', r.classId?.substring(0, 8) + '…',
+          r.position, r.average + '%', r.academicYear, r.isFinalized ? '✓ Final' : 'Draft'];
+      default:
+        return [r.id];
+    }
+  }
+
+  function rowLabel(r) {
+    switch (dataTab) {
+      case 'students':    return `${r.firstName} ${r.lastName} (${r.studentCode})`;
+      case 'teachers':    return `${r.firstName} ${r.lastName} (${r.email})`;
+      case 'classes':     return r.name;
+      case 'subjects':    return r.name;
+      case 'enrollments': return `Enrollment ${r.id?.substring(0, 12)}`;
+      case 'scores':      return `Score ${r.id?.substring(0, 12)}`;
+      case 'results':     return `Result for student ${r.studentId?.substring(0, 12)}`;
+      default:            return r.id;
+    }
+  }
+
+  return (
+    <div>
+      {/* School selector */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 10, fontSize: '.9rem' }}>
+          🗄 School Data Browser — Full operational access
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ flex: 1, minWidth: 240, margin: 0 }}>
+            <label style={{ fontSize: '.75rem' }}>Select School</label>
+            <select
+              value={selectedSchoolId}
+              onChange={e => { setSelectedSchoolId(e.target.value); loadSchoolData(e.target.value); }}
+            >
+              <option value="">— Select a school to inspect —</option>
+              {schools.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.subscription?.plan || 'no plan'})
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedSchoolId && (
+            <button
+              onClick={() => loadSchoolData(selectedSchoolId)}
+              className="btn btn-ghost btn-sm"
+            >
+              ↻ Refresh
+            </button>
+          )}
+          {selectedSchool && (
+            <button
+              onClick={() => handleDeleteSchool(selectedSchool)}
+              className="btn btn-danger btn-sm"
+              style={{ fontWeight: 700 }}
+            >
+              🗑 Delete Entire School
+            </button>
+          )}
+        </div>
+        {dataError && <div className="alert alert-danger" style={{ marginTop: 10 }}>{dataError}</div>}
+      </div>
+
+      {!selectedSchoolId && (
+        <div className="card">
+          <div className="empty-state">
+            <div className="icon">🏫</div>
+            <p>Select a school above to view and manage all its data.</p>
+          </div>
+        </div>
+      )}
+
+      {loadingData && (
+        <div className="card">
+          <div className="spinner-center"><div className="spinner" /></div>
+        </div>
+      )}
+
+      {data && !loadingData && (
+        <>
+          {/* School summary */}
+          <div className="card" style={{ marginBottom: 10, background: '#e3f2fd', border: '1px solid #90caf9' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--navy)' }}>{selectedSchool?.name}</div>
+                <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>{selectedSchool?.subscription?.adminEmail}</div>
+              </div>
+              {DATA_TABS.map(t => (
+                <div key={t.key} style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--navy)' }}>
+                    {data[t.key]?.length || 0}
+                  </div>
+                  <div style={{ fontSize: '.7rem', color: 'var(--text-lt)' }}>{t.label.replace(/.*\s/, '')}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Collection tabs */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+            {DATA_TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => { setDataTab(t.key); setSearch(''); }}
+                style={{
+                  padding: '5px 12px', borderRadius: 20, fontSize: '.78rem', cursor: 'pointer',
+                  border: `1.5px solid ${dataTab === t.key ? 'var(--navy)' : 'var(--border)'}`,
+                  background: dataTab === t.key ? 'var(--navy)' : '#fff',
+                  color: dataTab === t.key ? '#fff' : 'var(--text-mid)',
+                  fontWeight: dataTab === t.key ? 700 : 400,
+                }}
+              >
+                {t.label} <span style={{ opacity: .7 }}>({data[t.key]?.length || 0})</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="card">
+            <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+              <input
+                placeholder={`Search ${dataTab}…`}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '.8rem', color: 'var(--text-lt)', whiteSpace: 'nowrap' }}>
+                {filtered.length} / {currentRecords.length}
+              </span>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="empty-state">
+                <div className="icon">📭</div>
+                <p>No {dataTab} records found.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ fontSize: '.72rem' }}>ID</th>
+                      {(() => {
+                        const headers = {
+                          students:    ['Name', 'Code', 'Gender', 'Status'],
+                          teachers:    ['Name', 'Email', 'Phone', 'Classes'],
+                          classes:     ['Name', 'Level', 'Capacity'],
+                          subjects:    ['Name', 'Code', 'Class/Exam'],
+                          enrollments: ['Student', 'Class', 'Year', 'Term', 'Status'],
+                          scores:      ['Student', 'Subject', 'Class', 'Exam', 'Total', 'Year', 'Term'],
+                          results:     ['Student', 'Class', 'Position', 'Average', 'Year', 'Status'],
+                        };
+                        return (headers[dataTab] || []).map(h => (
+                          <th key={h} style={{ fontSize: '.72rem' }}>{h}</th>
+                        ));
+                      })()}
+                      <th style={{ fontSize: '.72rem' }}>Delete</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(r => (
+                      <tr key={r.id}>
+                        <td className="td-mono" style={{ fontSize: '.68rem', color: 'var(--text-lt)', maxWidth: 80 }}>
+                          {r.id?.substring(0, 10)}…
+                        </td>
+                        {renderRow(r).map((cell, i) => (
+                          <td key={i} style={{ fontSize: '.8rem' }}>{cell ?? '—'}</td>
+                        ))}
+                        <td>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            style={{ fontSize: '.7rem', padding: '2px 8px' }}
+                            onClick={() => handleDeleteRecord(dataTab, r.id, rowLabel(r))}
+                          >
+                            🗑
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function SuperAdmin() {
   const { user, userProfile, logout } = useAuth();
   const navigate = useNavigate();
@@ -670,6 +963,13 @@ export default function SuperAdmin() {
             Alerts {expiringSchools.length > 0 && (
               <span className="badge badge-warning" style={{ marginLeft: 6 }}>{expiringSchools.length}</span>
             )}
+          </button>
+          <button
+            className={`tab${tab === 'data' ? ' active' : ''}`}
+            onClick={() => setTab('data')}
+            style={{ background: tab === 'data' ? '#e94560' : '', color: tab === 'data' ? '#fff' : '', fontWeight: 700 }}
+          >
+            🗄 School Data
           </button>
         </div>
 
@@ -924,6 +1224,11 @@ export default function SuperAdmin() {
               </div>
             )}
           </>
+        )}
+
+        {/* ── SCHOOL DATA BROWSER ── */}
+        {tab === 'data' && (
+          <SchoolDataBrowser schools={schools} />
         )}
       </div>
 
