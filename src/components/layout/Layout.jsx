@@ -69,13 +69,22 @@ export default function Layout() {
   const NAV_ITEMS = isTeacher ? TEACHER_NAV : ADMIN_NAV;
 
   const syncInfo = {
-    synced:  { label: '● Synced',   cls: 'synced'  },
-    syncing: { label: '↻ Syncing…', cls: 'syncing' },
-    offline: { label: '⚠ Offline', cls: 'offline' },
-    error:   { label: '✕ Error',    cls: 'offline' },
-    online:  { label: '↻ Syncing…', cls: 'syncing' },
+    synced:  { label: '● Synced',          cls: 'synced'  },
+    syncing: { label: '↻ Syncing…',        cls: 'syncing' },
+    offline: { label: '📴 Offline',         cls: 'offline' },
+    error:   { label: '⚠ Sync Error',      cls: 'offline' },
+    online:  { label: '↻ Syncing…',        cls: 'syncing' },
   };
   const sync = syncInfo[syncStatus] || syncInfo.synced;
+
+  // Show a tooltip/title that explains the offline state
+  const syncTitle = {
+    synced:  'All data saved to database',
+    syncing: 'Saving data to database…',
+    offline: 'No internet — data saved locally, will sync when reconnected',
+    error:   'Sync error — will retry automatically when connection improves',
+    online:  'Back online — syncing queued data…',
+  }[syncStatus] || '';
 
   return (
     <div className="app-shell">
@@ -192,7 +201,7 @@ export default function Layout() {
           >☰</button>
           <span className="topbar-title">{school?.name || 'School Management'}</span>
           <div className="topbar-right">
-            <span className={`sync-badge ${sync.cls}`}>{sync.label}</span>
+            <span className={`sync-badge ${sync.cls}`} title={syncTitle}>{sync.label}</span>
           </div>
         </header>
 
@@ -206,7 +215,7 @@ export default function Layout() {
             <span>⏰</span>
             <span>
               Your subscription expires in <strong>{days} day{days !== 1 ? 's' : ''}</strong>.
-              Contact 0549271528 to renew.
+              Contact 024XXXXXXX to renew.
             </span>
             <a
               href="https://wa.me/233240000000" target="_blank" rel="noreferrer"
@@ -242,6 +251,23 @@ export default function Layout() {
         )}
 
         <main className="page-content">
+          {/* Offline banner — shown whenever connectivity is lost */}
+          {(syncStatus === 'offline' || syncStatus === 'error') && (
+            <div style={{
+              background: syncStatus === 'error' ? '#fff3e0' : '#e3f2fd',
+              border: `1px solid ${syncStatus === 'error' ? '#ff9800' : '#90caf9'}`,
+              borderRadius: 8, padding: '8px 14px', marginBottom: 12,
+              display: 'flex', alignItems: 'center', gap: 10, fontSize: '.8rem',
+            }}>
+              <span style={{ fontSize: '1rem' }}>{syncStatus === 'error' ? '⚠️' : '📴'}</span>
+              <div>
+                {syncStatus === 'offline'
+                  ? <><strong>You\'re offline.</strong> Data is saved locally and will sync automatically when you reconnect. You can keep working.</>
+                  : <><strong>Sync error.</strong> Your last save may not have reached the database. We\'ll retry automatically. If this persists, contact support.</>
+                }
+              </div>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>
