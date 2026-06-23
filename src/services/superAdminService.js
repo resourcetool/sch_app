@@ -280,20 +280,22 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
     throw new Error(eligibility.reason);
   }
 
-  const plan_data = PLANS.trial;
-  const now       = Date.now();
-  const expiresAt = now + plan_data.durationDays * 24 * 60 * 60 * 1000;
+  const now = Date.now();
 
+  // Status is 'pending_approval' — NOT 'active'.
+  // The super admin must review and approve before the school can use the system.
+  // This prevents fake signups from getting immediate access.
+  // The school sees a "pending" screen after signup, explaining clearly what to expect.
   const subscription = {
     id:           schoolId,
     schoolId,
     schoolName,
     plan:         'trial',
-    status:       'active',
+    status:       'pending_approval',
     backupAddon:  false,
-    activatedAt:  now,
-    expiresAt,
-    renewedAt:    now,
+    requestedAt:  now,
+    activatedAt:  null,
+    expiresAt:    null,
     adminEmail,
     trialEmail:   adminEmail.trim().toLowerCase(),
     trialPhone:   adminPhone.replace(/\D/g, ''),
@@ -303,6 +305,37 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
 
   await setDoc(doc(db, 'subscriptions', schoolId), subscription);
   return subscription;
+}
+
+export async function approveTrialRequest(schoolId, approvedByEmail) {
+  const plan_data = PLANS.trial;
+  const now       = Date.now();
+  const expiresAt = now + plan_data.durationDays * 24 * 60 * 60 * 1000;
+
+  await updateDoc(doc(db, 'subscriptions', schoolId), {
+    status:      'active',
+    activatedAt: now,
+    expiresAt,
+    renewedAt:   now,
+    approvedBy:  approvedByEmail,
+    approvedAt:  now,
+  });
+}
+
+export async function rejectTrialRequest(schoolId, reason, rejectedByEmail) {
+  await updateDoc(doc(db, 'subscriptions', schoolId), {
+    status:     'rejected',
+    rejectedBy: rejectedByEmail,
+    rejectedAt: Date.now(),
+    rejectionReason: reason || 'Did not meet trial requirements',
+  });
+}
+
+export async function getPendingTrials() {
+  const snap = await getDocs(
+    query(collection(db, 'subscriptions'), where('status', '==', 'pending_approval'))
+  );
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false) {

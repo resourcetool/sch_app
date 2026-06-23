@@ -1,17 +1,18 @@
 // src/services/syncService.js
 //
-// Key fixes:
-// 1. writeRecord() now writes to Firestore DIRECTLY (not just queue) when online.
-//    This means data is never lost if browser cache is cleared — Firestore is
-//    the source of truth, IDB is just a cache for speed/offline.
-// 2. initialSync() now called on EVERY login (not just first), ensuring teachers
-//    on different devices always get latest data from Firestore.
-// 3. getScoresFromFirestore() added — report generation fetches scores directly
-//    from Firestore to guarantee accuracy regardless of IDB state.
-// 4. syncQueue is still used for offline writes; they flush on reconnect.
+// HYBRID OFFLINE/ONLINE SYNC — robust implementation.
+//
+// Architecture:
+//   Writes:  IDB first (instant) → Firestore directly (online)
+//            or queue for offline → auto-flush on reconnect.
+//   Reads:   IDB first → Firestore fallback if IDB empty.
+//   Conflict: last-write-wins on updatedAt timestamp.
+//             If Firestore doc is NEWER than our write, we skip (don't overwrite fresher data).
+//   Retry:   Failed Firestore writes retry up to 3 times with exponential backoff.
+//   Status:  Broadcast to all listeners — Layout.jsx shows sync badge.
 
 import {
-  collection, doc, setDoc, deleteDoc,
+  collection, doc, setDoc, deleteDoc, getDoc,
   getDocs, query, where, serverTimestamp, writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -20,69 +21,41 @@ import {
   enqueueSyncOperation, idbPut, idbGetAll, idbPutMany, idbDelete
 } from './indexedDB';
 
-let isSyncing   = false;
+// ── SYNC STATUS BROADCAST ─────────────────────────────────────────
 let syncListeners = [];
+let currentStatus = 'synced';
 
 export function onSyncStatusChange(cb) {
   syncListeners.push(cb);
+  cb(currentStatus); // emit current status immediately
   return () => { syncListeners = syncListeners.filter(l => l !== cb); };
 }
 
-function notifySyncListeners(status) {
+function emit(status) {
+  currentStatus = status;
   syncListeners.forEach(cb => cb(status));
 }
 
-// ── FLUSH OFFLINE QUEUE TO FIRESTORE ─────────────────────────────
-export async function syncToFirestore() {
-  if (isSyncing || !navigator.onLine) return;
-  isSyncing = true;
-  notifySyncListeners('syncing');
-
-  try {
-    const pendingOps = await getPendingSyncOps();
-    if (pendingOps.length === 0) {
-      notifySyncListeners('synced');
-      return;
+// ── RETRY HELPER ──────────────────────────────────────────────────
+async function withRetry(fn, maxAttempts = 3, baseDelayMs = 1000) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+      console.warn(`[Sync] Attempt ${attempt} failed, retrying in ${delay}ms:`, err.message);
+      await new Promise(r => setTimeout(r, delay));
     }
-
-    const batch     = writeBatch(db);
-    const processed = [];
-
-    for (const op of pendingOps) {
-      try {
-        const ref = doc(db, op.collection, op.docId);
-        if (op.type === 'set') {
-          const { _localUpdatedAt, ...data } = op.data;
-          batch.set(ref, { ...data, updatedAt: serverTimestamp() }, { merge: true });
-        } else if (op.type === 'delete') {
-          batch.delete(ref);
-        }
-        processed.push(op.id);
-      } catch (err) {
-        await markSyncOpFailed(op.id, err);
-      }
-    }
-
-    if (processed.length > 0) {
-      await batch.commit();
-      await Promise.all(processed.map(id => markSyncOpComplete(id)));
-    }
-
-    notifySyncListeners('synced');
-  } catch (err) {
-    console.error('[Sync] Flush failed:', err);
-    notifySyncListeners('error');
-  } finally {
-    isSyncing = false;
   }
 }
 
 // ── WRITE RECORD ─────────────────────────────────────────────────
-// Always writes to IDB immediately (for instant UI response).
-// When ONLINE: also writes directly to Firestore right now.
-// When OFFLINE: queues the write; flushed when connection returns.
-// This means clearing browser cache NEVER loses data — Firestore
-// is the permanent store; IDB is just a local cache.
+// 1. Always writes to IDB immediately → instant UI response.
+// 2. Online: writes directly to Firestore with retry logic.
+//    Before writing, checks if Firestore already has a NEWER version
+//    (conflict resolution: last write wins by updatedAt).
+// 3. Offline: queues the write for automatic flush on reconnect.
 export async function writeRecord(collectionName, docId, data, schoolId) {
   const record = {
     ...data,
@@ -91,73 +64,131 @@ export async function writeRecord(collectionName, docId, data, schoolId) {
     updatedAt: Date.now(),
   };
 
-  // 1. Write to IDB immediately (fast local response)
+  // 1. Write to IDB immediately
   await idbPut(collectionName, record);
 
   if (navigator.onLine) {
-    // 2a. Online: write directly to Firestore right now
     try {
-      const { _localUpdatedAt, ...firestoreData } = record;
-      await setDoc(
-        doc(db, collectionName, docId),
-        { ...firestoreData, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-      notifySyncListeners('synced');
+      await withRetry(async () => {
+        // Conflict check: if the Firestore doc has updatedAt AFTER our
+        // local write, it means another device wrote more recently.
+        // We skip our write to avoid overwriting fresher data.
+        const existing = await getDoc(doc(db, collectionName, docId));
+        if (existing.exists()) {
+          const serverUpdatedAt = existing.data().updatedAt;
+          if (serverUpdatedAt && serverUpdatedAt > record.updatedAt) {
+            // Server is newer — pull it into IDB instead of overwriting
+            const serverData = { id: docId, ...existing.data() };
+            await idbPut(collectionName, serverData);
+            console.info(`[Sync] Skipped write to ${collectionName}/${docId} — server data is newer`);
+            return;
+          }
+        }
+
+        const { _localUpdatedAt, ...firestoreData } = record;
+        await setDoc(
+          doc(db, collectionName, docId),
+          { ...firestoreData, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      });
+      emit('synced');
     } catch (err) {
-      // Firestore write failed — fall back to queue so it retries
-      console.warn(`[Sync] Direct write failed for ${collectionName}/${docId}, queuing:`, err.message);
+      console.error(`[Sync] Write failed for ${collectionName}/${docId}:`, err.message);
       await enqueueSyncOperation({ collection: collectionName, docId, type: 'set', data: record });
-      notifySyncListeners('error');
+      emit('error');
     }
   } else {
-    // 2b. Offline: queue for later
     await enqueueSyncOperation({ collection: collectionName, docId, type: 'set', data: record });
-    notifySyncListeners('offline');
+    emit('offline');
   }
 
   return record;
 }
 
 // ── DELETE RECORD ─────────────────────────────────────────────────
-// CRITICAL FIX: This function previously only deleted from Firestore,
-// never from local IndexedDB. Since every page reads from IDB first
-// (idbGetAll), the "deleted" item stayed visible in IDB and reappeared
-// immediately after refresh() — making it LOOK like delete did nothing,
-// even though Firestore deletion may have actually succeeded.
-//
-// Now: delete from IDB immediately (so UI updates instantly), then
-// delete from Firestore (or queue if offline).
+// Deletes from IDB first (instant UI), then Firestore (or queues).
 export async function deleteRecord(collectionName, docId) {
-  // 1. Always remove from IDB first — this is what makes the UI update
+  // 1. Delete from IDB immediately — makes UI update right away
   await idbDelete(collectionName, docId);
 
-  // 2. Remove from Firestore (the permanent store)
   if (navigator.onLine) {
     try {
-      await deleteDoc(doc(db, collectionName, docId));
+      await withRetry(() => deleteDoc(doc(db, collectionName, docId)));
+      emit('synced');
     } catch (err) {
-      console.warn(`[Sync] Direct delete failed, queuing:`, err.message);
+      console.warn(`[Sync] Delete failed, queuing:`, err.message);
       await enqueueSyncOperation({ collection: collectionName, docId, type: 'delete', data: {} });
+      emit('error');
     }
   } else {
     await enqueueSyncOperation({ collection: collectionName, docId, type: 'delete', data: {} });
+    emit('offline');
+  }
+}
+
+// ── FLUSH OFFLINE QUEUE ───────────────────────────────────────────
+// Called automatically on reconnect and on login.
+// Processes all pending offline writes in a Firestore batch.
+let isFlushing = false;
+
+export async function syncToFirestore() {
+  if (isFlushing || !navigator.onLine) return;
+  isFlushing = true;
+  emit('syncing');
+
+  try {
+    const pendingOps = await getPendingSyncOps();
+    if (pendingOps.length === 0) { emit('synced'); return; }
+
+    console.info(`[Sync] Flushing ${pendingOps.length} queued operations`);
+
+    // Process in batches of 400 (Firestore batch limit is 500)
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < pendingOps.length; i += BATCH_SIZE) {
+      const chunk      = pendingOps.slice(i, i + BATCH_SIZE);
+      const batch      = writeBatch(db);
+      const toComplete = [];
+
+      for (const op of chunk) {
+        try {
+          const ref = doc(db, op.collection, op.docId);
+          if (op.type === 'set') {
+            const { _localUpdatedAt, ...data } = op.data;
+            batch.set(ref, { ...data, updatedAt: serverTimestamp() }, { merge: true });
+          } else if (op.type === 'delete') {
+            batch.delete(ref);
+          }
+          toComplete.push(op.id);
+        } catch (err) {
+          await markSyncOpFailed(op.id, err);
+        }
+      }
+
+      if (toComplete.length > 0) {
+        await withRetry(() => batch.commit());
+        await Promise.all(toComplete.map(id => markSyncOpComplete(id)));
+        console.info(`[Sync] Flushed batch of ${toComplete.length}`);
+      }
+    }
+
+    emit('synced');
+  } catch (err) {
+    console.error('[Sync] Flush failed:', err);
+    emit('error');
+  } finally {
+    isFlushing = false;
   }
 }
 
 // ── PULL COLLECTION FROM FIRESTORE → IDB ─────────────────────────
-// Called on login and refresh to populate IDB from Firestore.
-// This is how cross-device sync works: teacher logs in on any
-// device → this pulls all school data fresh from Firestore.
 export async function pullCollectionFromFirestore(collectionName, schoolId) {
   if (!navigator.onLine) return [];
   try {
     const q       = query(collection(db, collectionName), where('schoolId', '==', schoolId));
     const snap    = await getDocs(q);
     const records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (records.length > 0) {
-      await idbPutMany(collectionName, records);
-    }
+    if (records.length > 0) await idbPutMany(collectionName, records);
     return records;
   } catch (err) {
     console.error(`[Sync] Pull failed for ${collectionName}:`, err.message);
@@ -165,58 +196,69 @@ export async function pullCollectionFromFirestore(collectionName, schoolId) {
   }
 }
 
-// ── INITIAL SYNC ──────────────────────────────────────────────────
-// Called every login. Pulls all school collections from Firestore
-// into IDB so the app works offline and all devices stay in sync.
+// ── INITIAL SYNC (on every login) ────────────────────────────────
+// Pulls all school collections from Firestore into IDB so the app
+// works offline and all devices see the same data.
+// Also flushes any queued offline writes.
 export async function initialSync(schoolId) {
-  if (!navigator.onLine) return;
+  if (!navigator.onLine) { emit('offline'); return; }
+  emit('syncing');
+
   const COLLECTIONS = [
     'students', 'enrollments', 'teachers', 'classes',
     'subjects', 'scores', 'results', 'promotions', 'analytics',
     'assessmentDeadlines',
   ];
+
   try {
-    notifySyncListeners('syncing');
-    await Promise.all(COLLECTIONS.map(c => pullCollectionFromFirestore(c, schoolId)));
-    // Also flush any pending offline writes
+    // Pull all collections in parallel
+    await Promise.allSettled(
+      COLLECTIONS.map(c => pullCollectionFromFirestore(c, schoolId))
+    );
+    // Flush any offline writes first — they might conflict with pulled data
     await syncToFirestore();
-    notifySyncListeners('synced');
+    emit('synced');
   } catch (err) {
     console.error('[Sync] Initial sync error:', err);
-    notifySyncListeners('error');
+    emit('error');
   }
 }
 
 // ── FETCH SCORES DIRECTLY FROM FIRESTORE ─────────────────────────
-// Used by report generation to guarantee accuracy.
-// Never reads from IDB — always fetches live from Firestore so
-// every teacher's submitted scores are included regardless of
-// which device they used or whether their data is cached locally.
+// Used by report generation to guarantee all teachers' scores are included.
+// Never reads from IDB — always live from Firestore.
 export async function getScoresFromFirestore(schoolId, classId, academicYear, term) {
-  const constraints = [
+  const snap = await getDocs(query(
+    collection(db, 'scores'),
     where('schoolId',    '==', schoolId),
     where('classId',     '==', classId),
     where('academicYear','==', academicYear),
     where('term',        '==', term),
-  ];
-  const snap    = await getDocs(query(collection(db, 'scores'), ...constraints));
+  ));
   const records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-  // Also update IDB with the freshly fetched data
-  if (records.length > 0) {
-    await idbPutMany('scores', records);
-  }
-
+  if (records.length > 0) await idbPutMany('scores', records);
   return records;
 }
 
 // ── CONNECTIVITY LISTENERS ────────────────────────────────────────
+// Auto-flush queued writes when connection returns.
+// Emits status so the UI sync badge updates immediately.
+let connectivitySetup = false;
 export function setupConnectivityListeners() {
-  window.addEventListener('online', () => {
-    notifySyncListeners('online');
-    syncToFirestore();  // flush any queued offline writes
+  if (connectivitySetup) return;
+  connectivitySetup = true;
+
+  window.addEventListener('online', async () => {
+    console.info('[Sync] Connection restored — flushing queue');
+    emit('syncing');
+    await syncToFirestore();
   });
+
   window.addEventListener('offline', () => {
-    notifySyncListeners('offline');
+    console.info('[Sync] Connection lost — switching to offline mode');
+    emit('offline');
   });
+
+  // Emit initial status
+  emit(navigator.onLine ? 'synced' : 'offline');
 }

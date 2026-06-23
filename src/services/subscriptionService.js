@@ -126,22 +126,22 @@ export function getSubscriptionStatus(subscription) {
   if (!subscription) return 'none';
   const now = Date.now();
 
-  if (subscription.status === 'suspended')   return 'suspended';
-  if (subscription.status === 'trial_ended') return 'trial_ended';
+  if (subscription.status === 'suspended')        return 'suspended';
+  if (subscription.status === 'trial_ended')      return 'trial_ended';
+  if (subscription.status === 'pending_approval') return 'pending_approval';
+  if (subscription.status === 'rejected')         return 'rejected';
 
   const expiry = subscription.expiresAt;
 
-  // Trial-specific: even if not yet milestone-ended, check the 21-day bound
   if (subscription.plan === 'trial') {
-    if (now > expiry) return 'trial_ended';            // time limit reached
-    if (expiry - now < 3 * 24 * 60 * 60 * 1000) return 'trial_ending'; // <3 days left
+    if (!expiry || now > expiry) return 'trial_ended';
+    if (expiry - now < 3 * 24 * 60 * 60 * 1000) return 'trial_ending';
     return 'active';
   }
 
-  // Paid plans: standard expiry + grace logic
-  if (now > expiry + 7 * 24 * 60 * 60 * 1000) return 'expired';  // past grace
-  if (now > expiry) return 'grace';                                 // in grace period
-  if (expiry - now < 7 * 24 * 60 * 60 * 1000) return 'expiring';  // < 7 days left
+  if (now > expiry + 7 * 24 * 60 * 60 * 1000) return 'expired';
+  if (now > expiry) return 'grace';
+  if (expiry - now < 7 * 24 * 60 * 60 * 1000) return 'expiring';
   return 'active';
 }
 
@@ -180,27 +180,15 @@ export async function getSubscription(schoolId) {
 export function canUseFeature(subscription, feature) {
   if (!subscription) return false;
   const status = getSubscriptionStatus(subscription);
-  if (status === 'suspended')   return false;
-  if (status === 'expired')     return false;
-  if (status === 'trial_ended') return false;  // read-only — no feature access
-  if (status === 'grace')       return false;
-
+  if (['suspended','expired','trial_ended','grace','pending_approval','rejected'].includes(status)) return false;
   const plan = PLANS[subscription.plan] || PLANS.trial;
-
-  if (feature === 'backup') {
-    return plan.features.backup || subscription.backupAddon === true;
-  }
-
+  if (feature === 'backup') return plan.features.backup || subscription.backupAddon === true;
   return plan.features[feature] === true;
 }
 
-// READ-ONLY applies to: grace, expired, suspended, AND trial_ended.
-// Critically, trial_ended does NOT mean data loss — isReadOnly() only
-// blocks new writes (entering scores, adding students, etc). All
-// existing data remains fully visible and exportable-on-paper-request.
 export function isReadOnly(subscription) {
   const status = getSubscriptionStatus(subscription);
-  return status === 'grace' || status === 'expired' || status === 'suspended' || status === 'trial_ended';
+  return ['grace','expired','suspended','trial_ended','pending_approval','rejected'].includes(status);
 }
 
 export function getStudentLimit(subscription) {
