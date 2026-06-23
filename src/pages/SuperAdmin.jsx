@@ -18,6 +18,7 @@ import {
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
   addSuperAdminNote, getSchoolDetails, deleteAccessRequest,
   getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool,
+  approveTrialRequest, rejectTrialRequest, getPendingTrials,
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
@@ -458,6 +459,94 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
 
 // ── MAIN SUPER ADMIN PAGE ─────────────────────────────────────────
 
+// ── PENDING TRIAL REQUESTS PANEL ─────────────────────────────────
+function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
+  const [acting, setActing] = useState(null);
+
+  async function handleApprove(trial) {
+    if (!window.confirm(`Approve trial for "${trial.schoolName}"?\n\nThis gives them full trial access immediately.`)) return;
+    setActing(trial.id);
+    try {
+      await approveTrialRequest(trial.schoolId || trial.id, userProfile.email);
+      onRefresh();
+    } catch (err) { alert('Approve failed: ' + err.message); }
+    finally { setActing(null); }
+  }
+
+  async function handleReject(trial) {
+    const reason = window.prompt(
+      `Reason for rejecting "${trial.schoolName}"?\n\n(This is shown to the applicant.)`,
+      'Could not verify school details'
+    );
+    if (reason === null) return; // cancelled
+    setActing(trial.id);
+    try {
+      await rejectTrialRequest(trial.schoolId || trial.id, reason, userProfile.email);
+      onRefresh();
+    } catch (err) { alert('Reject failed: ' + err.message); }
+    finally { setActing(null); }
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
+          🎁 Pending Trial Requests ({pendingTrials.length})
+        </div>
+        <p style={{ fontSize: '.83rem', color: 'var(--text-mid)', marginBottom: 0 }}>
+          Each school submits a trial request with their real name, verified email, and Ghana phone.
+          Review and approve or reject below. Approved schools get immediate access.
+        </p>
+      </div>
+
+      {pendingTrials.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <div className="icon">✅</div>
+            <p>No pending trial requests. All caught up!</p>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {pendingTrials.map(trial => (
+            <div key={trial.id} className="card" style={{ border: '1.5px solid #ff9800' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--navy)', marginBottom: 4 }}>
+                    {trial.schoolName}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '4px 16px', fontSize: '.8rem', color: 'var(--text-mid)' }}>
+                    <div>📧 {trial.adminEmail}</div>
+                    <div>📞 {trial.trialPhone}</div>
+                    <div>🕐 {trial.requestedAt ? new Date(trial.requestedAt).toLocaleString() : '—'}</div>
+                    <div>🔑 {trial.schoolId?.substring(0, 12)}…</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexShrink: 0 }}>
+                  <button
+                    className="btn btn-success btn-sm"
+                    onClick={() => handleApprove(trial)}
+                    disabled={acting === trial.id}
+                  >
+                    {acting === trial.id ? '…' : '✓ Approve'}
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleReject(trial)}
+                    disabled={acting === trial.id}
+                  >
+                    ✕ Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── SCHOOL DATA BROWSER ──────────────────────────────────────────
 // Gives super admin complete visibility and control over every school's
 // operational data. Select a school → see all students, teachers,
@@ -756,6 +845,7 @@ export default function SuperAdmin() {
 
   const [tab,      setTab]      = useState('schools');
   const [schools,  setSchools]  = useState([]);
+  const [pendingTrials, setPendingTrials] = useState([]);
   const [codes,    setCodes]    = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -807,6 +897,14 @@ export default function SuperAdmin() {
         setRequests(requestsResult.value);
       } else {
         console.error('SuperAdmin: getAllAccessRequests failed:', requestsResult.reason);
+      }
+
+      // Load pending trials separately (non-blocking)
+      try {
+        const trials = await getPendingTrials();
+        setPendingTrials(trials);
+      } catch (err) {
+        console.warn('SuperAdmin: getPendingTrials failed:', err.message);
       }
 
       // Only show top-level error if ALL three failed (likely a permissions issue)
@@ -962,6 +1060,16 @@ export default function SuperAdmin() {
           <button className={`tab${tab === 'alerts' ? ' active' : ''}`} onClick={() => setTab('alerts')}>
             Alerts {expiringSchools.length > 0 && (
               <span className="badge badge-warning" style={{ marginLeft: 6 }}>{expiringSchools.length}</span>
+            )}
+          </button>
+          <button
+            className={`tab${tab === 'trials' ? ' active' : ''}`}
+            onClick={() => setTab('trials')}
+            style={{ background: tab === 'trials' ? '#ff9800' : '', color: tab === 'trials' ? '#fff' : '' }}
+          >
+            🎁 Trial Requests
+            {pendingTrials.length > 0 && (
+              <span className="badge badge-danger" style={{ marginLeft: 6 }}>{pendingTrials.length}</span>
             )}
           </button>
           <button
@@ -1224,6 +1332,15 @@ export default function SuperAdmin() {
               </div>
             )}
           </>
+        )}
+
+        {/* ── PENDING TRIAL REQUESTS ── */}
+        {tab === 'trials' && (
+          <PendingTrialsPanel
+            pendingTrials={pendingTrials}
+            userProfile={userProfile}
+            onRefresh={load}
+          />
         )}
 
         {/* ── SCHOOL DATA BROWSER ── */}
