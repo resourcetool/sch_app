@@ -19,6 +19,8 @@ import {
   addSuperAdminNote, getSchoolDetails, deleteAccessRequest,
   getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool,
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
+  sendSuperAdminEmail, broadcastEmailToAllSchools,
+  getSchoolActivityLog,
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
@@ -459,6 +461,304 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
 
 // ── MAIN SUPER ADMIN PAGE ─────────────────────────────────────────
 
+// ── EMAIL COMPOSER PANEL ─────────────────────────────────────────
+function EmailComposerPanel({ schools, userProfile }) {
+  const [mode,      setMode]      = useState('individual'); // 'individual' | 'bulk'
+  const [toEmail,   setToEmail]   = useState('');
+  const [toSchool,  setToSchool]  = useState('');
+  const [subject,   setSubject]   = useState('');
+  const [body,      setBody]      = useState('');
+  const [sending,   setSending]   = useState(false);
+  const [result,    setResult]    = useState(null);
+  const [error,     setError]     = useState('');
+
+  // Bulk filter
+  const [bulkFilter, setBulkFilter] = useState('all'); // 'all' | 'active' | 'trial' | 'expired'
+
+  const bulkTargets = schools.filter(s => {
+    if (bulkFilter === 'all')     return true;
+    if (bulkFilter === 'active')  return s.subscription?.status === 'active' && s.subscription?.plan !== 'trial';
+    if (bulkFilter === 'trial')   return s.subscription?.plan   === 'trial';
+    if (bulkFilter === 'expired') return ['expired','trial_ended','grace'].includes(s.subscription?.status);
+    return true;
+  }).filter(s => s.subscription?.adminEmail || s.email);
+
+  async function handleSend(e) {
+    e.preventDefault();
+    if (!subject.trim() || !body.trim()) { setError('Subject and message are required'); return; }
+    setSending(true); setError(''); setResult(null);
+
+    try {
+      if (mode === 'individual') {
+        const email = toEmail.trim() || schools.find(s => s.id === toSchool)?.subscription?.adminEmail;
+        if (!email) { setError('Enter an email address or select a school'); setSending(false); return; }
+        await sendSuperAdminEmail(email, subject, body, 'SchoolMS Team');
+        setResult({ sent: [{ email }], failed: [] });
+      } else {
+        const res = await broadcastEmailToAllSchools(subject, body, bulkTargets);
+        setResult(res);
+      }
+    } catch (err) {
+      setError('Send failed: ' + err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 10 }}>✉️ Send Email</div>
+
+        {/* Mode selector */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {[['individual','👤 Individual'],['bulk','📢 Bulk Broadcast']].map(([m, label]) => (
+            <button
+              key={m} onClick={() => { setMode(m); setResult(null); setError(''); }}
+              style={{
+                padding: '6px 16px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem',
+                border: `2px solid ${mode === m ? 'var(--navy)' : 'var(--border)'}`,
+                background: mode === m ? 'var(--navy)' : '#fff',
+                color: mode === m ? '#fff' : 'var(--text-mid)', fontWeight: mode === m ? 700 : 400,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {error && <div className="alert alert-danger" style={{ marginBottom: 10 }}>{error}</div>}
+
+        {result && (
+          <div className="alert alert-success" style={{ marginBottom: 10 }}>
+            ✓ Sent to {result.sent?.length || 1} recipient(s).
+            {result.failed?.length > 0 && ` ⚠ ${result.failed.length} failed: ${result.failed.map(f => f.email || f.school).join(', ')}`}
+          </div>
+        )}
+
+        <form onSubmit={handleSend} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {mode === 'individual' ? (
+            <div className="form-grid">
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Select School</label>
+                <select value={toSchool} onChange={e => { setToSchool(e.target.value); setToEmail(schools.find(s => s.id === e.target.value)?.subscription?.adminEmail || ''); }}>
+                  <option value="">— Pick a school —</option>
+                  {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: '.75rem' }}>Or type email directly</label>
+                <input type="email" value={toEmail} onChange={e => setToEmail(e.target.value)} placeholder="admin@school.edu.gh" />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: '.75rem', color: 'var(--text-lt)', marginBottom: 6 }}>Send to:</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                {[['all','All Schools'],['active','Active Plans'],['trial','Trial Schools'],['expired','Expired']].map(([f, label]) => (
+                  <button key={f} type="button" onClick={() => setBulkFilter(f)}
+                    style={{
+                      padding: '4px 12px', borderRadius: 16, fontSize: '.78rem', cursor: 'pointer',
+                      border: `1.5px solid ${bulkFilter === f ? 'var(--navy)' : 'var(--border)'}`,
+                      background: bulkFilter === f ? 'var(--navy)' : '#fff',
+                      color: bulkFilter === f ? '#fff' : 'var(--text-mid)', fontWeight: bulkFilter === f ? 700 : 400,
+                    }}
+                  >
+                    {label} ({(schools.filter(s => {
+                      if (f === 'all')     return s.subscription?.adminEmail || s.email;
+                      if (f === 'active')  return s.subscription?.status === 'active' && s.subscription?.plan !== 'trial';
+                      if (f === 'trial')   return s.subscription?.plan === 'trial';
+                      if (f === 'expired') return ['expired','trial_ended','grace'].includes(s.subscription?.status);
+                      return false;
+                    })).length})
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: '.76rem', color: 'var(--text-mid)', background: 'var(--surface2)', borderRadius: 6, padding: '6px 10px' }}>
+                Will send to <strong>{bulkTargets.length}</strong> school admin(s)
+              </div>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label style={{ fontSize: '.75rem' }}>Subject *</label>
+            <input required value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Important update about SchoolMS" />
+          </div>
+
+          <div className="form-group">
+            <label style={{ fontSize: '.75rem' }}>Message *</label>
+            <textarea
+              required rows={6}
+              value={body} onChange={e => setBody(e.target.value)}
+              placeholder="Type your message here…"
+              style={{ width: '100%', resize: 'vertical', padding: 10, borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'inherit', fontSize: '.85rem' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="submit" className="btn btn-primary" disabled={sending}>
+              {sending ? '⏳ Sending…' : mode === 'individual' ? '✉️ Send Email' : `📢 Broadcast to ${bulkTargets.length} schools`}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => { setSubject(''); setBody(''); setResult(null); setError(''); }}>
+              Clear
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Email templates */}
+      <div className="card">
+        <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: '.85rem' }}>Quick Templates</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[
+            ['Payment Reminder', 'Reminder: Your SchoolMS subscription', 'Dear School Admin,\n\nThis is a friendly reminder that your SchoolMS subscription is due for renewal.\n\nTo continue enjoying uninterrupted access, please make your payment and contact us on WhatsApp at 0549548274.\n\nThank you for using SchoolMS.\n\nBest regards,\nSchoolMS Team'],
+            ['Trial Approved', 'Your SchoolMS Free Trial is Now Active!', 'Dear School Admin,\n\nGreat news! Your SchoolMS free trial request has been approved. You can now log in and start setting up your school.\n\nIf you need any help getting started, tap "Help & Support" in the app menu or WhatsApp us at 0549548274.\n\nWelcome to SchoolMS!\n\nBest regards,\nSchoolMS Team'],
+            ['System Update', 'Important Update to SchoolMS', 'Dear School Admin,\n\nWe have made improvements to SchoolMS. Please log out and log back in to get the latest updates.\n\nIf you experience any issues, contact us on WhatsApp at 0549548274.\n\nThank you.\n\nSchoolMS Team'],
+          ].map(([label, tmplSubject, tmplBody]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => { setSubject(tmplSubject); setBody(tmplBody); }}
+              style={{
+                textAlign: 'left', padding: '8px 12px', borderRadius: 8,
+                border: '1px solid var(--border)', background: '#fff', cursor: 'pointer',
+                fontSize: '.8rem', color: 'var(--navy)', fontWeight: 600,
+              }}
+            >
+              📝 {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ACTIVITY LOG PANEL ────────────────────────────────────────────
+const ACTION_LABELS = {
+  login:              { label: 'Logged in',          icon: '🔑', color: '#2196F3' },
+  scores_saved:       { label: 'Scores saved',        icon: '✏️', color: '#4CAF50' },
+  results_generated:  { label: 'Results generated',   icon: '📊', color: '#9C27B0' },
+  student_added:      { label: 'Student added',       icon: '👤', color: '#00BCD4' },
+  report_printed:     { label: 'Report printed',      icon: '🖨️', color: '#FF9800' },
+  settings_changed:   { label: 'Settings updated',    icon: '⚙️', color: '#607D8B' },
+};
+
+function ActivityLogPanel({ schools }) {
+  const [selectedSchool, setSelectedSchool] = useState('');
+  const [logs,           setLogs]           = useState([]);
+  const [loading,        setLoading]        = useState(false);
+  const [error,          setError]          = useState('');
+  const [filterAction,   setFilterAction]   = useState('');
+
+  async function loadLogs(schoolId) {
+    if (!schoolId) { setLogs([]); return; }
+    setLoading(true); setError('');
+    try {
+      const data = await getSchoolActivityLog(schoolId, 200);
+      setLogs(data);
+    } catch (err) {
+      setError('Failed to load activity: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filtered = filterAction ? logs.filter(l => l.action === filterAction) : logs;
+  const uniqueActions = [...new Set(logs.map(l => l.action))];
+
+  function timeAgo(ts) {
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1)   return 'just now';
+    if (m < 60)  return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24)  return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 10 }}>📋 Account Activity Log</div>
+        <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', marginBottom: 12 }}>
+          Tracks logins, score entries, report generation, and other key actions per school.
+        </p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ flex: 1, minWidth: 200, margin: 0 }}>
+            <label style={{ fontSize: '.75rem' }}>Select School</label>
+            <select value={selectedSchool} onChange={e => { setSelectedSchool(e.target.value); loadLogs(e.target.value); }}>
+              <option value="">— Select a school —</option>
+              {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          {uniqueActions.length > 0 && (
+            <div className="form-group" style={{ minWidth: 160, margin: 0 }}>
+              <label style={{ fontSize: '.75rem' }}>Filter by action</label>
+              <select value={filterAction} onChange={e => setFilterAction(e.target.value)}>
+                <option value="">All Actions</option>
+                {uniqueActions.map(a => <option key={a} value={a}>{ACTION_LABELS[a]?.label || a}</option>)}
+              </select>
+            </div>
+          )}
+          {selectedSchool && <button onClick={() => loadLogs(selectedSchool)} className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}>↻</button>}
+        </div>
+        {error && <div className="alert alert-danger" style={{ marginTop: 8 }}>{error}</div>}
+      </div>
+
+      {!selectedSchool ? (
+        <div className="card"><div className="empty-state"><div className="icon">📋</div><p>Select a school to view its activity log.</p></div></div>
+      ) : loading ? (
+        <div className="card"><div className="spinner-center"><div className="spinner" /></div></div>
+      ) : filtered.length === 0 ? (
+        <div className="card"><div className="empty-state"><div className="icon">📭</div><p>No activity recorded yet for this school.</p></div></div>
+      ) : (
+        <div className="card">
+          <div style={{ fontSize: '.78rem', color: 'var(--text-lt)', marginBottom: 10 }}>
+            Showing {filtered.length} events
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {filtered.map((log, i) => {
+              const meta = ACTION_LABELS[log.action] || { label: log.action, icon: '•', color: '#888' };
+              return (
+                <div key={log.id} style={{
+                  display: 'flex', gap: 12, padding: '10px 0',
+                  borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none',
+                }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: '50%',
+                    background: meta.color + '18', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', fontSize: '1rem', flexShrink: 0,
+                  }}>
+                    {meta.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ fontWeight: 600, fontSize: '.84rem', color: 'var(--navy)' }}>{meta.label}</div>
+                      <div style={{ fontSize: '.74rem', color: 'var(--text-lt)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {timeAgo(log.timestamp)}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '.76rem', color: 'var(--text-mid)', marginTop: 1 }}>
+                      {log.userEmail}
+                      {log.details?.classId && ` · Class: ${log.details.classId?.substring(0, 8)}…`}
+                      {log.details?.count && ` · ${log.details.count} records`}
+                      {log.details?.role && ` · Role: ${log.details.role}`}
+                    </div>
+                    <div style={{ fontSize: '.7rem', color: 'var(--text-lt)', marginTop: 1 }}>
+                      {new Date(log.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PENDING TRIAL REQUESTS PANEL ─────────────────────────────────
 function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
   const [acting, setActing] = useState(null);
@@ -467,7 +767,7 @@ function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
     if (!window.confirm(`Approve trial for "${trial.schoolName}"?\n\nThis gives them full trial access immediately.`)) return;
     setActing(trial.id);
     try {
-      await approveTrialRequest(trial.schoolId || trial.id, userProfile.email);
+      await approveTrialRequest(trial.id, userProfile.email);
       onRefresh();
     } catch (err) { alert('Approve failed: ' + err.message); }
     finally { setActing(null); }
@@ -478,10 +778,10 @@ function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
       `Reason for rejecting "${trial.schoolName}"?\n\n(This is shown to the applicant.)`,
       'Could not verify school details'
     );
-    if (reason === null) return; // cancelled
+    if (reason === null) return;
     setActing(trial.id);
     try {
-      await rejectTrialRequest(trial.schoolId || trial.id, reason, userProfile.email);
+      await rejectTrialRequest(trial.id, reason, userProfile.email);
       onRefresh();
     } catch (err) { alert('Reject failed: ' + err.message); }
     finally { setActing(null); }
@@ -1073,6 +1373,18 @@ export default function SuperAdmin() {
             )}
           </button>
           <button
+            className={`tab${tab === 'email' ? ' active' : ''}`}
+            onClick={() => setTab('email')}
+          >
+            ✉️ Send Email
+          </button>
+          <button
+            className={`tab${tab === 'activity' ? ' active' : ''}`}
+            onClick={() => setTab('activity')}
+          >
+            📋 Activity Log
+          </button>
+          <button
             className={`tab${tab === 'data' ? ' active' : ''}`}
             onClick={() => setTab('data')}
             style={{ background: tab === 'data' ? '#e94560' : '', color: tab === 'data' ? '#fff' : '', fontWeight: 700 }}
@@ -1341,6 +1653,16 @@ export default function SuperAdmin() {
             userProfile={userProfile}
             onRefresh={load}
           />
+        )}
+
+        {/* ── EMAIL COMPOSER ── */}
+        {tab === 'email' && (
+          <EmailComposerPanel schools={schools} userProfile={userProfile} />
+        )}
+
+        {/* ── ACTIVITY LOG ── */}
+        {tab === 'activity' && (
+          <ActivityLogPanel schools={schools} />
         )}
 
         {/* ── SCHOOL DATA BROWSER ── */}
