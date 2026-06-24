@@ -17,6 +17,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db }              from '../services/firebase';
 import { initialSync, setupConnectivityListeners } from '../services/syncService';
 import { idbGet, idbPut }        from '../services/indexedDB';
+import { logActivity }           from '../services/superAdminService';
 import { isSuperAdmin }           from '../services/superAdminService';
 
 const AuthContext = createContext(null);
@@ -88,6 +89,13 @@ export function AuthProvider({ children }) {
       }
 
       setSyncComplete(true);
+
+      // Log login activity for super admin visibility
+      if (profile?.schoolId) {
+        logActivity(profile.schoolId, firebaseUser.uid, firebaseUser.email, 'login', {
+          role: profile.role,
+        });
+      }
     });
 
     return unsub;
