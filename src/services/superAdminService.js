@@ -13,7 +13,7 @@
 
 import {
   collection, doc, getDoc, getDocs, setDoc,
-  updateDoc, deleteDoc, query, orderBy, serverTimestamp, where
+  updateDoc, deleteDoc, query, orderBy, serverTimestamp, where, writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { PLANS } from './subscriptionService';
@@ -307,12 +307,13 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
   return subscription;
 }
 
-export async function approveTrialRequest(schoolId, approvedByEmail) {
+export async function approveTrialRequest(trialId, approvedByEmail) {
+  // trialId is the Firestore document ID of the subscription (== schoolId)
   const plan_data = PLANS.trial;
   const now       = Date.now();
   const expiresAt = now + plan_data.durationDays * 24 * 60 * 60 * 1000;
 
-  await updateDoc(doc(db, 'subscriptions', schoolId), {
+  await updateDoc(doc(db, 'subscriptions', trialId), {
     status:      'active',
     activatedAt: now,
     expiresAt,
@@ -322,20 +323,36 @@ export async function approveTrialRequest(schoolId, approvedByEmail) {
   });
 }
 
-export async function rejectTrialRequest(schoolId, reason, rejectedByEmail) {
-  await updateDoc(doc(db, 'subscriptions', schoolId), {
-    status:     'rejected',
-    rejectedBy: rejectedByEmail,
-    rejectedAt: Date.now(),
+export async function rejectTrialRequest(trialId, reason, rejectedByEmail) {
+  await updateDoc(doc(db, 'subscriptions', trialId), {
+    status:          'rejected',
+    rejectedBy:      rejectedByEmail,
+    rejectedAt:      Date.now(),
     rejectionReason: reason || 'Did not meet trial requirements',
   });
 }
 
 export async function getPendingTrials() {
-  const snap = await getDocs(
-    query(collection(db, 'subscriptions'), where('status', '==', 'pending_approval'))
-  );
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  try {
+    // Primary: query subscriptions collection directly by status
+    const snap = await getDocs(
+      query(collection(db, 'subscriptions'), where('status', '==', 'pending_approval'))
+    );
+    return snap.docs.map(d => ({ id: d.id, schoolId: d.id, ...d.data() }));
+  } catch (err) {
+    console.error('[SuperAdmin] getPendingTrials query failed:', err.message);
+    // Fallback: load ALL subscriptions and filter client-side
+    // (avoids index requirements, works even if query fails)
+    try {
+      const allSnap = await getDocs(collection(db, 'subscriptions'));
+      return allSnap.docs
+        .map(d => ({ id: d.id, schoolId: d.id, ...d.data() }))
+        .filter(s => s.status === 'pending_approval');
+    } catch (err2) {
+      console.error('[SuperAdmin] getPendingTrials fallback also failed:', err2.message);
+      return [];
+    }
+  }
 }
 
 export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false) {
@@ -509,31 +526,119 @@ export async function superAdminUpdateDoc(collectionName, docId, data) {
 
 export async function superAdminDeleteSchool(schoolId) {
   // Hard-deletes the school AND all its operational data.
-  // Use only for confirmed fraud/test accounts or data-removal requests.
-  // This is irreversible.
+  // Chunked into batches of 400 to stay safely under Firestore 500-op limit.
   const COLLECTIONS = [
     'students', 'teachers', 'classes', 'subjects',
     'enrollments', 'scores', 'results', 'promotions', 'analytics',
-    'assessmentDeadlines', 'assessmentAuditLog',
+    'assessmentDeadlines', 'assessmentAuditLog', 'activityLog',
   ];
 
-  const batch = writeBatch(db);
+  // Collect ALL refs first, then delete in safe chunks
+  const allRefs = [];
 
   for (const c of COLLECTIONS) {
     const snap = await getDocs(
       query(collection(db, c), where('schoolId', '==', schoolId))
     );
-    snap.docs.forEach(d => batch.delete(d.ref));
+    snap.docs.forEach(d => allRefs.push(d.ref));
   }
 
-  // Also delete school, subscription, users of this school
   const usersSnap = await getDocs(
     query(collection(db, 'users'), where('schoolId', '==', schoolId))
   );
-  usersSnap.docs.forEach(d => batch.delete(d.ref));
+  usersSnap.docs.forEach(d => allRefs.push(d.ref));
 
-  batch.delete(doc(db, 'schools',       schoolId));
-  batch.delete(doc(db, 'subscriptions', schoolId));
+  allRefs.push(doc(db, 'schools',       schoolId));
+  allRefs.push(doc(db, 'subscriptions', schoolId));
 
-  await batch.commit();
+  // Commit in chunks of 400 (safely under Firestore 500-op batch limit)
+  const CHUNK = 400;
+  for (let i = 0; i < allRefs.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    allRefs.slice(i, i + CHUNK).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+
+  console.info(`[SuperAdmin] School ${schoolId} deleted: ${allRefs.length} documents removed`);
+}
+
+// ── ACTIVITY LOG ─────────────────────────────────────────────────
+// Logs key admin/teacher actions to Firestore for super admin visibility.
+// Written from the client side — no Cloud Functions needed.
+// Super admin can view these logs per-school in the School Data tab.
+export async function logActivity(schoolId, userId, userEmail, action, details = {}) {
+  try {
+    const logId = `activity_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await setDoc(doc(db, 'activityLog', logId), {
+      id:        logId,
+      schoolId,
+      userId,
+      userEmail,
+      action,    // e.g. 'login', 'score_saved', 'results_generated', 'student_added'
+      details,   // any extra context (classId, studentId, etc.)
+      timestamp: Date.now(),
+      date:      new Date().toISOString().slice(0, 10),
+    });
+  } catch (err) {
+    // Never let logging failures break the main flow
+    console.warn('[ActivityLog] Failed to log:', err.message);
+  }
+}
+
+export async function getSchoolActivityLog(schoolId, limitCount = 100) {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'activityLog'),
+        where('schoolId', '==', schoolId),
+        orderBy('timestamp', 'desc')
+      )
+    );
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, limitCount);
+  } catch (err) {
+    console.error('[ActivityLog] Fetch failed:', err.message);
+    return [];
+  }
+}
+
+// ── SUPER ADMIN EMAIL (via EmailJS) ──────────────────────────────
+// Sends email to one recipient or broadcasts to all school admins.
+// Uses the same EmailJS config as the access-request notifications.
+export async function sendSuperAdminEmail(to, subject, body, fromName = 'SchoolMS Admin') {
+  const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+  const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID_GENERAL ||
+                     import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+  const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+  if (!serviceId || !templateId || !publicKey) {
+    throw new Error('EmailJS is not configured. Add VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_TEMPLATE_ID, and VITE_EMAILJS_PUBLIC_KEY to your .env.local file.');
+  }
+
+  const { default: emailjs } = await import('@emailjs/browser');
+
+  await emailjs.send(serviceId, templateId, {
+    to_email:    to,
+    to_name:     to,
+    from_name:   fromName,
+    subject,
+    message:     body,
+    reply_to:    'schoolpilot132@gmail.com',
+  }, publicKey);
+}
+
+export async function broadcastEmailToAllSchools(subject, body, schools) {
+  const results = { sent: [], failed: [] };
+  for (const school of schools) {
+    const email = school.subscription?.adminEmail || school.email;
+    if (!email) { results.failed.push({ school: school.name, reason: 'No email on file' }); continue; }
+    try {
+      await sendSuperAdminEmail(email, subject, body);
+      results.sent.push({ school: school.name, email });
+      // Small delay to avoid hitting EmailJS rate limits
+      await new Promise(r => setTimeout(r, 300));
+    } catch (err) {
+      results.failed.push({ school: school.name, email, reason: err.message });
+    }
+  }
+  return results;
 }

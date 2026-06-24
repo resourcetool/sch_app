@@ -20,6 +20,7 @@ import { idbGetAll, idbGet, idbPutMany } from './indexedDB';
 import { writeRecord, getScoresFromFirestore } from './syncService';
 import { validateTeacherCanSubmit } from './assessmentService';
 import { checkAndEndTrialOnMilestone } from './subscriptionService';
+import { logActivity } from './superAdminService';
 
 // ── SCORE CRUD ────────────────────────────────────────────────────
 
@@ -71,9 +72,18 @@ export async function saveBatchScores(schoolId, scoresArray, options = {}) {
       options.term         || scoresArray[0].term
     );
   }
-  return Promise.all(
+  const results = await Promise.all(
     scoresArray.map(s => saveScore(schoolId, s, { ...options, _skipDeadlineCheck: true }))
   );
+  // Log score save activity (fire-and-forget)
+  logActivity(schoolId, '', options.userEmail || '', 'scores_saved', {
+    count:       scoresArray.length,
+    classId:     scoresArray[0]?.classId,
+    subjectId:   scoresArray[0]?.subjectId,
+    academicYear: scoresArray[0]?.academicYear,
+    term:         scoresArray[0]?.term,
+  });
+  return results;
 }
 
 function calculateTotal(scoreData) {
@@ -228,6 +238,11 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
   } catch (err) {
     console.warn('[Trial] Could not check/end trial on report milestone:', err.message);
   }
+
+  // Log result generation activity
+  logActivity(schoolId, '', '', 'results_generated', {
+    classId, academicYear, term, count: savedResults.length,
+  });
 
   return savedResults;
 }
