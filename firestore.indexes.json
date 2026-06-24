@@ -1,256 +1,249 @@
 {
   "indexes": [
     {
-      "collectionGroup": "scores",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING"  },
-        { "fieldPath": "updatedAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "scores",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "classId",     "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "scores",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "subjectId",   "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "scores",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "classId",     "order": "ASCENDING" },
-        { "fieldPath": "subjectId",   "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "enrollments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "classId",     "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" },
-        { "fieldPath": "status",      "order": "ASCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "academicYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
-      "collectionGroup": "enrollments",
+      "collectionGroup": "scores",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "studentId",   "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "academicYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
-      "collectionGroup": "enrollments",
+      "collectionGroup": "scores",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" },
-        { "fieldPath": "status",      "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "students",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "status",      "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "students",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "lastName",    "order": "ASCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "results",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "classId",     "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "academicYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
-      "collectionGroup": "results",
+      "collectionGroup": "students",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "classId",     "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" },
-        { "fieldPath": "position",    "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "classes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "name",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "subjects",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "name",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "teachers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "lastName",    "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "role",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "teacherId",   "order": "ASCENDING" },
-        { "fieldPath": "schoolId",    "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "promotions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "analytics",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "classId",     "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "assessmentDeadlines",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "updatedAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "assessmentDeadlines",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "academicYear","order": "ASCENDING" },
-        { "fieldPath": "term",        "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "assessmentAuditLog",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "timestamp",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "assessmentAuditLog",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "scoreId",     "order": "ASCENDING" },
-        { "fieldPath": "timestamp",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "assessmentAuditLog",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "action",      "order": "ASCENDING" },
-        { "fieldPath": "timestamp",   "order": "DESCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "academicYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "accessRequests",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status",      "order": "ASCENDING" },
-        { "fieldPath": "submittedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "accessRequests",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "submittedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "registrationCodes",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status",      "order": "ASCENDING" },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
-      "collectionGroup": "registrationCodes",
+      "collectionGroup": "assessmentDeadlines",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "assessmentAuditLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "assessmentAuditLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "scoreId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "subscriptions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status",      "order": "ASCENDING" },
-        { "fieldPath": "expiresAt",   "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestedAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
-      "collectionGroup": "backups",
+      "collectionGroup": "activityLog",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "schoolId",    "order": "ASCENDING" },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "activityLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "activityLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "userEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
