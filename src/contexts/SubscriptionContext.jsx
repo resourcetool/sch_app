@@ -91,6 +91,40 @@ function PendingApprovalScreen({ subscription, onRefresh, logout }) {
   );
 }
 
+// ── DELETION REQUESTED SCREEN ────────────────────────────────────
+function DeletionRequestedScreen({ subscription, logout }) {
+  const deleteAfter = subscription?.deleteAfter
+    ? new Date(subscription.deleteAfter).toLocaleDateString('en-GH', { dateStyle: 'long' })
+    : '60 days from request';
+  return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f3460 0%, #1a4a7a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: '48px 40px', maxWidth: 480, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: '3rem', marginBottom: 16 }}>🗑</div>
+        <h2 style={{ color: '#0f3460', marginBottom: 10 }}>Deletion Request Pending</h2>
+        <p style={{ color: '#666', marginBottom: 16, lineHeight: 1.7, fontSize: '.88rem' }}>
+          Your school has requested account deletion. Your account is now inactive and your
+          data will be permanently deleted on <strong>{deleteAfter}</strong>.
+        </p>
+        <div style={{ background: '#fff3e0', borderRadius: 12, padding: '14px 18px', marginBottom: 20, textAlign: 'left' }}>
+          <div style={{ fontWeight: 700, color: '#e65100', marginBottom: 4, fontSize: '.85rem' }}>Changed your mind?</div>
+          <div style={{ fontSize: '.82rem', color: '#bf6000', lineHeight: 1.6 }}>
+            Contact us before {deleteAfter} to cancel this deletion request and restore your account.
+            All your data is still safely preserved during this period.
+          </div>
+        </div>
+        <a href={`https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolMS data deletion request.`}
+          target="_blank" rel="noreferrer"
+          style={{ display: 'block', background: '#25D366', color: '#fff', padding: '12px 20px', borderRadius: 10, fontWeight: 700, textDecoration: 'none', fontSize: '.9rem', marginBottom: 10 }}>
+          📱 Cancel Deletion — WhatsApp 0549548274
+        </a>
+        <button onClick={logout} style={{ marginTop: 8, background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: '.78rem', textDecoration: 'underline' }}>
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── REJECTED SCREEN ───────────────────────────────────────────────
 function RejectedScreen({ subscription, logout }) {
   return (
@@ -190,14 +224,29 @@ export function SubscriptionProvider({ children }) {
     return canUseFeature(subscription, feature);
   }
 
-  if (loading) return null;
+  // Show loading screen while fetching subscription — NEVER render app
+  // until we know the subscription status. This prevents the brief
+  // "active" flash that let pending-approval trials reach the dashboard.
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f3460' }}>
+        <div style={{ textAlign: 'center', color: '#fff' }}>
+          <div style={{ width: 36, height: 36, border: '3px solid rgba(255,255,255,.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .7s linear infinite', margin: '0 auto 12px' }} />
+          <div style={{ fontSize: '.85rem', opacity: .7 }}>Checking account status…</div>
+        </div>
+      </div>
+    );
+  }
 
-  // Intercept pending and rejected before rendering the app
+  // Intercept special states before rendering the app
   if (status === 'pending_approval') {
     return <PendingApprovalScreen subscription={subscription} onRefresh={refresh} logout={logout} />;
   }
   if (status === 'rejected') {
     return <RejectedScreen subscription={subscription} logout={logout} />;
+  }
+  if (status === 'deletion_requested') {
+    return <DeletionRequestedScreen subscription={subscription} logout={logout} />;
   }
 
   return (
