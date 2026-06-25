@@ -28,6 +28,11 @@ import Reports                                      from './pages/Reports';
 import Promotion                                    from './pages/Promotion';
 import Analytics                                    from './pages/Analytics';
 import Support                                      from './pages/Support';
+import PrivacyPolicy                               from './pages/legal/PrivacyPolicy';
+import TermsOfService                             from './pages/legal/TermsOfService';
+import SubscriptionPolicy                         from './pages/legal/SubscriptionPolicy';
+import DataRetention                              from './pages/legal/DataRetention';
+import DataSecurity                              from './pages/legal/DataSecurity';
 import Backup                                       from './pages/Backup';
 import Settings                                     from './pages/Settings';
 import SuperAdmin                                   from './pages/SuperAdmin';
@@ -73,6 +78,11 @@ function AppRoutes() {
         <Route path="/register"       element={<Register />} />
         <Route path="/trial"          element={<TrialSignup />} />
         <Route path="/request-access" element={<RequestAccess />} />
+        <Route path="/legal/privacy"      element={<PrivacyPolicy />} />
+        <Route path="/legal/terms"        element={<TermsOfService />} />
+        <Route path="/legal/subscription" element={<SubscriptionPolicy />} />
+        <Route path="/legal/data-retention" element={<DataRetention />} />
+        <Route path="/legal/data-security"  element={<DataSecurity />} />
         <Route path="*"               element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -97,6 +107,11 @@ function AppRoutes() {
           <Route path="/reports"   element={<Reports />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/support"   element={<Support />} />
+          <Route path="/legal/privacy"      element={<PrivacyPolicy />} />
+          <Route path="/legal/terms"        element={<TermsOfService />} />
+          <Route path="/legal/subscription" element={<SubscriptionPolicy />} />
+          <Route path="/legal/data-retention" element={<DataRetention />} />
+          <Route path="/legal/data-security"  element={<DataSecurity />} />
           <Route path="*"          element={<Navigate to="/scores" replace />} />
         </Route>
       </Routes>
@@ -124,6 +139,11 @@ function AppRoutes() {
         <Route path="/settings"     element={<AdminOnly><Settings /></AdminOnly>} />
         <Route path="/assessments"  element={<AdminOnly><AssessmentDeadlines /></AdminOnly>} />
         <Route path="/support"      element={<Support />} />
+        <Route path="/legal/privacy"      element={<PrivacyPolicy />} />
+        <Route path="/legal/terms"        element={<TermsOfService />} />
+        <Route path="/legal/subscription" element={<SubscriptionPolicy />} />
+        <Route path="/legal/data-retention" element={<DataRetention />} />
+        <Route path="/legal/data-security"  element={<DataSecurity />} />
         <Route path="*"             element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
