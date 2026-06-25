@@ -128,8 +128,9 @@ export function getSubscriptionStatus(subscription) {
 
   if (subscription.status === 'suspended')        return 'suspended';
   if (subscription.status === 'trial_ended')      return 'trial_ended';
-  if (subscription.status === 'pending_approval') return 'pending_approval';
-  if (subscription.status === 'rejected')         return 'rejected';
+  if (subscription.status === 'pending_approval')  return 'pending_approval';
+  if (subscription.status === 'rejected')           return 'rejected';
+  if (subscription.status === 'deletion_requested') return 'deletion_requested';
 
   const expiry = subscription.expiresAt;
 
@@ -188,7 +189,7 @@ export function canUseFeature(subscription, feature) {
 
 export function isReadOnly(subscription) {
   const status = getSubscriptionStatus(subscription);
-  return ['grace','expired','suspended','trial_ended','pending_approval','rejected'].includes(status);
+  return ['grace','expired','suspended','trial_ended','pending_approval','rejected','deletion_requested'].includes(status);
 }
 
 export function getStudentLimit(subscription) {

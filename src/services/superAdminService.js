@@ -569,18 +569,21 @@ export async function superAdminDeleteSchool(schoolId) {
 export async function logActivity(schoolId, userId, userEmail, action, details = {}) {
   try {
     const logId = `activity_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // Use serverTimestamp() so the time is always the Firestore server's time —
+    // never the school device's clock which may be wrong.
+    // We also store a clientTimestamp as a fallback for display if serverTimestamp
+    // hasn't resolved yet, but serverTimestamp is always the authoritative value.
     await setDoc(doc(db, 'activityLog', logId), {
-      id:        logId,
+      id:              logId,
       schoolId,
       userId,
       userEmail,
-      action,    // e.g. 'login', 'score_saved', 'results_generated', 'student_added'
-      details,   // any extra context (classId, studentId, etc.)
-      timestamp: Date.now(),
-      date:      new Date().toISOString().slice(0, 10),
+      action,
+      details,
+      timestamp:       serverTimestamp(),   // ← Firestore server time, always correct
+      clientTimestamp: Date.now(),          // ← client time, for fallback only
     });
   } catch (err) {
-    // Never let logging failures break the main flow
     console.warn('[ActivityLog] Failed to log:', err.message);
   }
 }
@@ -641,4 +644,59 @@ export async function broadcastEmailToAllSchools(subject, body, schools) {
     }
   }
   return results;
+}
+
+// ── ACCOUNT DELETION REQUEST ──────────────────────────────────────
+// Only school admin can initiate. Account deactivated immediately.
+// Data preserved in a 30-90 day grace period. Permanent deletion
+// happens only after grace period expires (manual or scheduled).
+export async function requestAccountDeletion(schoolId, adminEmail, reason) {
+  const now           = Date.now();
+  const gracePeriodMs = 60 * 24 * 60 * 60 * 1000; // 60 days
+  const deleteAfter   = now + gracePeriodMs;
+
+  // Mark subscription as deletion-requested (blocks all access)
+  await updateDoc(doc(db, 'subscriptions', schoolId), {
+    status:               'deletion_requested',
+    deletionRequestedAt:  now,
+    deletionRequestedBy:  adminEmail,
+    deletionReason:       reason || 'Admin requested deletion',
+    deleteAfter,
+  });
+
+  // Mark school as inactive
+  await updateDoc(doc(db, 'schools', schoolId), {
+    status:     'deletion_pending',
+    inactiveAt: now,
+  });
+
+  // Log the deletion request for audit trail
+  await logActivity(schoolId, '', adminEmail, 'deletion_requested', {
+    reason, deleteAfter,
+  });
+}
+
+export async function cancelDeletionRequest(schoolId, adminEmail) {
+  await updateDoc(doc(db, 'subscriptions', schoolId), {
+    status:              'active', // restore previous state
+    deletionCancelledAt: Date.now(),
+    deletionCancelledBy: adminEmail,
+    deleteAfter:         null,
+  });
+  await updateDoc(doc(db, 'schools', schoolId), {
+    status: 'active', inactiveAt: null,
+  });
+  await logActivity(schoolId, '', adminEmail, 'deletion_cancelled', {});
+}
+
+export async function getPendingDeletions() {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'subscriptions'), where('status', '==', 'deletion_requested'))
+    );
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error('[SuperAdmin] getPendingDeletions failed:', err.message);
+    return [];
+  }
 }
