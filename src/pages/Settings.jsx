@@ -12,11 +12,150 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useSchool } from '../contexts/SchoolContext';
-import { defaultGradingScale } from '../services/scoreService';
+import { useAuth }  from '../contexts/AuthContext';
+import { defaultGradingScale }         from '../services/scoreService';
+import { requestAccountDeletion }      from '../services/superAdminService';
+import { useSubscription }             from '../contexts/SubscriptionContext';
 import { DEFAULT_PROMOTION_RULES } from '../services/promotionService';
 
+// ── ACCOUNT DELETION PANEL ───────────────────────────────────────
+function AccountDeletionPanel({ school, schoolId, subscription }) {
+  const { userProfile } = useAuth();
+  const [phase,    setPhase]    = useState('info');  // info | confirm | requested
+  const [reason,   setReason]   = useState('');
+  const [confirm1, setConfirm1] = useState(false);
+  const [confirm2, setConfirm2] = useState(false);
+  const [typedName,setTypedName]= useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+
+  const isPending = subscription?.status === 'deletion_requested';
+  const deleteAfter = subscription?.deleteAfter
+    ? new Date(subscription.deleteAfter).toLocaleDateString('en-GH', { dateStyle: 'long' })
+    : null;
+
+  async function handleSubmit() {
+    if (typedName.trim() !== school?.name?.trim()) {
+      setError('School name does not match. Please type it exactly.');
+      return;
+    }
+    if (!confirm1 || !confirm2) {
+      setError('Please tick both confirmation boxes.');
+      return;
+    }
+    setLoading(true); setError('');
+    try {
+      await requestAccountDeletion(schoolId, userProfile.email, reason);
+      setPhase('requested');
+    } catch (err) {
+      setError('Failed to submit request: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (isPending || phase === 'requested') {
+    return (
+      <div className="card" style={{ maxWidth: 580, border: '2px solid #ef5350' }}>
+        <div style={{ fontSize: '2rem', marginBottom: 10 }}>⏳</div>
+        <div style={{ fontWeight: 700, color: '#c62828', fontSize: '1rem', marginBottom: 8 }}>
+          Deletion Request Submitted
+        </div>
+        <div style={{ fontSize: '.85rem', color: 'var(--text-mid)', lineHeight: 1.7, marginBottom: 14 }}>
+          Your account is now <strong>inactive</strong>. Your data is preserved until <strong>{deleteAfter || '60 days from now'}</strong>,
+          after which it will be permanently deleted.
+        </div>
+        <div style={{ background: '#fff3e0', borderRadius: 8, padding: 12, fontSize: '.82rem', color: '#e65100', marginBottom: 14 }}>
+          <strong>Changed your mind?</strong> You can cancel this request before the deletion date by contacting us on WhatsApp: 0549548274
+        </div>
+        <a
+          href="https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolMS data deletion request."
+          target="_blank" rel="noreferrer"
+          className="btn btn-ghost btn-sm"
+          style={{ textDecoration: 'none' }}
+        >
+          📱 Cancel Deletion Request
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 580 }}>
+      {phase === 'info' && (
+        <div className="card" style={{ border: '2px solid #ef5350' }}>
+          <div style={{ fontWeight: 700, color: '#c62828', fontSize: '1rem', marginBottom: 10 }}>
+            ⚠ Request Account Deletion
+          </div>
+          <div className="alert alert-danger" style={{ marginBottom: 14 }}>
+            <strong>This is permanent and irreversible.</strong> Read carefully before proceeding.
+          </div>
+          {[
+            ['What happens immediately', 'Your account is deactivated. No one can log in.'],
+            ['What happens to your data', 'All data (students, scores, results, reports) is hidden but preserved for 60 days.'],
+            ['Grace period', 'You have 60 days to cancel this request by contacting us. After that, data is permanently deleted.'],
+            ['Before you proceed', 'Download your data from the Backup section first. Once deleted, data cannot be recovered.'],
+          ].map(([h, b]) => (
+            <div key={h} style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: '.83rem', color: 'var(--navy)' }}>{h}</div>
+              <div style={{ fontSize: '.82rem', color: 'var(--text-mid)' }}>{b}</div>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button onClick={() => setPhase('confirm')} className="btn btn-danger">
+              I Understand — Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === 'confirm' && (
+        <div className="card" style={{ border: '2px solid #ef5350' }}>
+          <div style={{ fontWeight: 700, color: '#c62828', marginBottom: 14 }}>Confirm Deletion Request</div>
+          {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
+
+          <div className="form-group">
+            <label>Reason for deletion (optional)</label>
+            <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Switching to another system" />
+          </div>
+          <div className="form-group">
+            <label>Type your school name to confirm *</label>
+            <input
+              value={typedName} onChange={e => setTypedName(e.target.value)}
+              placeholder={school?.name}
+              style={{ borderColor: typedName && typedName !== school?.name ? '#ef5350' : '' }}
+            />
+            <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Must match exactly: {school?.name}</span>
+          </div>
+
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10, cursor: 'pointer', fontSize: '.84rem' }}>
+            <input type="checkbox" checked={confirm1} onChange={e => setConfirm1(e.target.checked)} style={{ marginTop: 2, flexShrink: 0 }} />
+            I understand my account will be deactivated immediately and data deleted after 60 days.
+          </label>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 16, cursor: 'pointer', fontSize: '.84rem' }}>
+            <input type="checkbox" checked={confirm2} onChange={e => setConfirm2(e.target.checked)} style={{ marginTop: 2, flexShrink: 0 }} />
+            I have downloaded or do not need my school's data export.
+          </label>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={() => setPhase('info')} className="btn btn-ghost">← Back</button>
+            <button
+              onClick={handleSubmit}
+              className="btn btn-danger"
+              disabled={loading || !confirm1 || !confirm2 || typedName !== school?.name}
+            >
+              {loading ? 'Submitting…' : '🗑 Submit Deletion Request'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
-  const { school, updateSchool } = useSchool();
+  const { school, updateSchool, schoolId } = useSchool();
+  const { subscription } = useSubscription();
   const [tab,         setTab]         = useState('school');
   const [schoolForm,  setSchoolForm]  = useState(null);
   const [gradingScale,setGradingScale]= useState([]);
@@ -125,6 +264,7 @@ export default function Settings() {
         <button className={`tab${tab === 'academic'? ' active' : ''}`} onClick={() => setTab('academic')}>Academic Year</button>
         <button className={`tab${tab === 'grading' ? ' active' : ''}`} onClick={() => setTab('grading')}>Grading Scale</button>
         <button className={`tab${tab === 'promotion'?' active' : ''}`} onClick={() => setTab('promotion')}>Promotion Rules</button>
+        <button className={`tab${tab === 'account' ? ' active' : ''}`} onClick={() => setTab('account')} style={{ color: tab === 'account' ? '#ef5350' : '' }}>⚠ Account</button>
       </div>
 
       {/* ── SCHOOL INFO ── */}
@@ -385,6 +525,11 @@ export default function Settings() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* ── ACCOUNT (DELETION) ── */}
+      {tab === 'account' && (
+        <AccountDeletionPanel school={school} schoolId={schoolId} subscription={subscription} />
       )}
 
       {/* ── PROMOTION RULES ── */}

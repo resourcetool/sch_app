@@ -12,7 +12,8 @@ import { useSchool } from '../contexts/SchoolContext';
 import { useAuth }   from '../contexts/AuthContext';
 import { idbGetAll } from '../services/indexedDB';
 import { Link }      from 'react-router-dom';
-import TrialBanner   from '../components/TrialBanner';
+import TrialBanner         from '../components/TrialBanner';
+import ExpiryNotification  from '../components/ExpiryNotification';
 
 // Deduplicate result records by enrollmentId, keeping only the most recent
 // per enrollment within the same class/year/term. Mirrors the logic in
@@ -73,6 +74,7 @@ export default function Dashboard() {
   return (
     <div>
       <TrialBanner />
+      <ExpiryNotification />
       <div className="page-header">
         <h1>Dashboard</h1>
       </div>

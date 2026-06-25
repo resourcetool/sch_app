@@ -20,7 +20,8 @@ import {
   getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool,
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
   sendSuperAdminEmail, broadcastEmailToAllSchools,
-  getSchoolActivityLog,
+  getSchoolActivityLog, getPendingDeletions,
+  cancelDeletionRequest,
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
@@ -461,6 +462,101 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
 
 // ── MAIN SUPER ADMIN PAGE ─────────────────────────────────────────
 
+// ── PENDING DELETIONS PANEL ───────────────────────────────────────
+function PendingDeletionsPanel({ userProfile, onRefresh }) {
+  const [deletions, setDeletions] = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [acting,    setActing]    = useState(null);
+
+  useEffect(() => {
+    getPendingDeletions().then(d => { setDeletions(d); setLoading(false); });
+  }, []);
+
+  function formatDate(ts) {
+    if (!ts) return '—';
+    return new Date(typeof ts === 'number' ? ts : ts.seconds * 1000)
+      .toLocaleDateString('en-GH', { dateStyle: 'medium' });
+  }
+
+  async function handleCancel(del) {
+    if (!window.confirm(`Cancel deletion request for "${del.schoolName}"?\n\nThis will restore their account to active.`)) return;
+    setActing(del.id);
+    try {
+      await cancelDeletionRequest(del.id, userProfile.email);
+      setDeletions(d => d.filter(x => x.id !== del.id));
+      onRefresh();
+    } catch (err) { alert('Failed: ' + err.message); }
+    finally { setActing(null); }
+  }
+
+  async function handleExecuteDelete(del) {
+    if (!window.confirm(
+      `PERMANENTLY DELETE "${del.schoolName}"?\n\nThis removes all data permanently. Cannot be undone.\n\nType CONFIRM to proceed.`
+    )) return;
+    const typed = window.prompt('Type CONFIRM (all caps) to permanently delete:');
+    if (typed !== 'CONFIRM') { alert('Deletion cancelled.'); return; }
+    setActing(del.id);
+    try {
+      const { superAdminDeleteSchool } = await import('../services/superAdminService');
+      await superAdminDeleteSchool(del.id);
+      setDeletions(d => d.filter(x => x.id !== del.id));
+      onRefresh();
+      alert('School permanently deleted.');
+    } catch (err) { alert('Delete failed: ' + err.message); }
+    finally { setActing(null); }
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: '#c62828', marginBottom: 6 }}>🗑 Pending Deletion Requests</div>
+        <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', marginBottom: 0 }}>
+          Schools that have requested data deletion. You can cancel (restore their account) or execute the permanent deletion after the grace period.
+        </p>
+      </div>
+      {loading ? (
+        <div className="card"><div className="spinner-center"><div className="spinner" /></div></div>
+      ) : deletions.length === 0 ? (
+        <div className="card"><div className="empty-state"><div className="icon">✅</div><p>No pending deletion requests.</p></div></div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {deletions.map(del => (
+            <div key={del.id} className="card" style={{ border: '1.5px solid #ef5350' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#c62828', marginBottom: 4 }}>{del.schoolName}</div>
+                  <div style={{ fontSize: '.8rem', color: 'var(--text-mid)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 16px' }}>
+                    <div>📧 {del.adminEmail || del.deletionRequestedBy}</div>
+                    <div>📅 Requested: {formatDate(del.deletionRequestedAt)}</div>
+                    <div>⏰ Delete after: {formatDate(del.deleteAfter)}</div>
+                    <div>💬 {del.deletionReason || 'No reason given'}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <button
+                    className="btn btn-success btn-sm"
+                    onClick={() => handleCancel(del)}
+                    disabled={acting === del.id}
+                  >
+                    ↩ Cancel & Restore
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleExecuteDelete(del)}
+                    disabled={acting === del.id}
+                  >
+                    🗑 Delete Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── EMAIL COMPOSER PANEL ─────────────────────────────────────────
 function EmailComposerPanel({ schools, userProfile }) {
   const [mode,      setMode]      = useState('individual'); // 'individual' | 'bulk'
@@ -667,14 +763,32 @@ function ActivityLogPanel({ schools }) {
   const filtered = filterAction ? logs.filter(l => l.action === filterAction) : logs;
   const uniqueActions = [...new Set(logs.map(l => l.action))];
 
+  function resolveTimestamp(ts) {
+    // serverTimestamp() comes back as a Firestore Timestamp object with .toMillis()
+    // or as a plain number (clientTimestamp fallback). Handle both.
+    if (!ts) return Date.now();
+    if (typeof ts === 'number') return ts;
+    if (typeof ts === 'object' && ts.toMillis) return ts.toMillis();
+    if (typeof ts === 'object' && ts.seconds)  return ts.seconds * 1000;
+    return Date.now();
+  }
+
   function timeAgo(ts) {
-    const diff = Date.now() - ts;
-    const m = Math.floor(diff / 60000);
+    const ms   = resolveTimestamp(ts);
+    const diff = Date.now() - ms;
+    const m    = Math.floor(diff / 60000);
     if (m < 1)   return 'just now';
     if (m < 60)  return `${m}m ago`;
     const h = Math.floor(m / 60);
     if (h < 24)  return `${h}h ago`;
     return `${Math.floor(h / 24)}d ago`;
+  }
+
+  function formatLogTime(ts) {
+    const ms = resolveTimestamp(ts);
+    return new Date(ms).toLocaleString('en-GH', {
+      dateStyle: 'medium', timeStyle: 'short', hour12: true,
+    });
   }
 
   return (
@@ -746,7 +860,7 @@ function ActivityLogPanel({ schools }) {
                       {log.details?.role && ` · Role: ${log.details.role}`}
                     </div>
                     <div style={{ fontSize: '.7rem', color: 'var(--text-lt)', marginTop: 1 }}>
-                      {new Date(log.timestamp).toLocaleString()}
+                      {formatLogTime(log.timestamp)}
                     </div>
                   </div>
                 </div>
@@ -1349,6 +1463,10 @@ export default function SuperAdmin() {
           <button className={`tab${tab === 'schools' ? ' active' : ''}`} onClick={() => setTab('schools')}>
             Schools ({schools.length})
           </button>
+          <button className={`tab${tab === 'deletions' ? ' active' : ''}`} onClick={() => setTab('deletions')}
+            style={{ color: tab === 'deletions' ? '#fff' : '', background: tab === 'deletions' ? '#c62828' : '' }}>
+            🗑 Deletions
+          </button>
           <button className={`tab${tab === 'requests' ? ' active' : ''}`} onClick={() => setTab('requests')}>
             Requests {pendingRequests.length > 0 && (
               <span className="badge badge-danger" style={{ marginLeft: 6 }}>{pendingRequests.length}</span>
@@ -1653,6 +1771,11 @@ export default function SuperAdmin() {
             userProfile={userProfile}
             onRefresh={load}
           />
+        )}
+
+        {/* ── PENDING DELETIONS ── */}
+        {tab === 'deletions' && (
+          <PendingDeletionsPanel userProfile={userProfile} onRefresh={load} />
         )}
 
         {/* ── EMAIL COMPOSER ── */}

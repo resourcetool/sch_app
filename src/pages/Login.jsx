@@ -219,14 +219,32 @@ export default function Login() {
             </form>
 
             <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'center' }}>
-              <div style={{ fontSize: '.82rem', color: 'var(--text-mid)' }}>
-                Have an access code?{' '}
-                <Link to="/register" style={{ color: 'var(--navy)', fontWeight: 700 }}>Register your school →</Link>
+              <div style={{ fontSize: '.82rem', color: 'var(--navy)', fontWeight: 700 }}>
+                New school?{' '}
+                <Link to="/trial" style={{ color: '#0d47a1' }}>Start your free 21-day trial →</Link>
               </div>
               <div style={{ fontSize: '.8rem', color: 'var(--text-lt)' }}>
-                New school?{' '}
-                <Link to="/request-access" style={{ color: 'var(--text-mid)' }}>Request access</Link>
+                Have an access code?{' '}
+                <Link to="/register" style={{ color: 'var(--text-mid)' }}>Register your school</Link>
               </div>
+            </div>
+
+            {/* Legal & policy links */}
+            <div style={{
+              marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)',
+              display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center',
+            }}>
+              {[
+                ['/legal/privacy',       'Privacy Policy'],
+                ['/legal/terms',         'Terms'],
+                ['/legal/subscription',  'Subscription'],
+                ['/legal/data-retention','Data Retention'],
+                ['/legal/data-security', 'Security'],
+              ].map(([to, label]) => (
+                <Link key={to} to={to} style={{ fontSize: '.7rem', color: 'var(--text-lt)', textDecoration: 'none' }}>
+                  {label}
+                </Link>
+              ))}
             </div>
           </>
         )}
