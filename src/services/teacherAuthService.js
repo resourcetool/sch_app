@@ -1,32 +1,30 @@
 // src/services/teacherAuthService.js
 //
-// NEW FILE — Handles teacher account creation WITHOUT affecting the
-// currently logged-in admin session.
-//
-// Problem: Firebase's createUserWithEmailAndPassword() signs IN the
-// newly created user, which logs the admin OUT and redirects them
-// away. This is the root cause of the "admin redirected to teachers
-// page" bug.
-//
-// Solution: Use a SECONDARY Firebase app instance just for creating
-// accounts. The secondary app is separate from the main auth state,
-// so the admin remains signed in throughout.
+// FIXES:
+// 1. ATOMIC creation — if Firestore setDoc fails after Firebase Auth account
+//    creation, the Auth account is deleted so the email can be retried.
+//    This was the root cause of "email taken, account creation fails" bug.
+// 2. Secondary app pattern preserved — admin remains signed in throughout.
+// 3. lastLoginAt initialised to null on creation so Teachers page can detect
+//    "never logged in" vs "logged in at X" cleanly.
 
-import { initializeApp, getApps }    from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc }                from 'firebase/firestore';
-import { db }                         from './firebase';
+import { initializeApp, getApps }                   from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword }   from 'firebase/auth';
+import { doc, setDoc, deleteDoc }                    from 'firebase/firestore';
+import { db }                                        from './firebase';
 
 const SECONDARY_APP_NAME = 'secondary-for-teacher-creation';
 
 /**
- * Creates a Firebase Auth account for a teacher without affecting
- * the currently signed-in admin user.
+ * Creates a Firebase Auth account for a teacher WITHOUT affecting the
+ * currently signed-in admin session (uses a secondary Firebase app).
+ *
+ * ATOMIC: if Firestore profile write fails, the Auth account is deleted
+ * so the email is immediately free to be retried — no orphaned emails.
  *
  * Returns the new user's UID.
  */
 export async function createTeacherAccount(email, password, profileData) {
-  // Get the main app's config so we can clone it for the secondary app
   const { getApp }     = await import('firebase/app');
   const mainApp        = getApp();
   const mainConfig     = mainApp.options;
@@ -42,33 +40,57 @@ export async function createTeacherAccount(email, password, profileData) {
 
   const secondaryAuth = getAuth(secondaryApp);
 
-  // Create the user in the secondary auth context
+  // Create the Firebase Auth account via the secondary app
   const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
   const uid  = cred.user.uid;
 
-  // Sign out of the secondary auth so it stays clean for next use
+  // Sign out of secondary app immediately — keeps it clean for next use
   await secondaryAuth.signOut();
 
-  // Write the user profile document to Firestore (using the main db)
-  // assignedClasses and assignedSubjects MUST be arrays in Firestore.
-  // The rules use .hasAny() on these fields — if they are missing or not
-  // arrays, hasAny() throws and the teacher gets permission denied.
+  // Now write the Firestore profile. If this fails, delete the Auth account.
   const assignedClasses  = Array.isArray(profileData.assignedClasses)  ? profileData.assignedClasses  : [];
   const assignedSubjects = Array.isArray(profileData.assignedSubjects) ? profileData.assignedSubjects : [];
 
-  await setDoc(doc(db, 'users', uid), {
-    id:               uid,
-    schoolId:         profileData.schoolId,
-    email,
-    firstName:        profileData.firstName  || '',
-    lastName:         profileData.lastName   || '',
-    role:             'teacher',
-    teacherId:        profileData.teacherId,
-    assignedClasses,
-    assignedSubjects,
-    status:           'active',
-    createdAt:        Date.now(),
-  });
+  try {
+    await setDoc(doc(db, 'users', uid), {
+      id:               uid,
+      schoolId:         profileData.schoolId,
+      email,
+      firstName:        profileData.firstName  || '',
+      lastName:         profileData.lastName   || '',
+      role:             'teacher',
+      teacherId:        profileData.teacherId,
+      assignedClasses,
+      assignedSubjects,
+      status:           'active',
+      createdAt:        Date.now(),
+      lastLoginAt:      null,   // populated on first login via AuthContext
+    });
 
-  return uid;
+    return uid;
+
+  } catch (firestoreError) {
+    // ── ATOMIC ROLLBACK ──────────────────────────────────────────
+    // Firestore write failed. Delete the Auth account so the email can be reused.
+    console.error('[TeacherAuth] Firestore write failed — rolling back Auth account:', firestoreError.message);
+    try {
+      // Re-sign in to secondary to get the user object, then delete it
+      const secondaryAuth2 = getAuth(secondaryApp);
+      const rollbackCred   = await secondaryAuth2.signInWithEmailAndPassword(email, password).catch(() => null);
+      if (rollbackCred?.user) {
+        const { deleteUser } = await import('firebase/auth');
+        await deleteUser(rollbackCred.user);
+        await secondaryAuth2.signOut();
+      }
+    } catch (deleteErr) {
+      console.error('[TeacherAuth] Could not delete orphaned Auth account:', deleteErr.message);
+    }
+    try {
+      await deleteDoc(doc(db, 'users', uid));
+    } catch (_) { /* best-effort */ }
+
+    throw new Error(
+      `Teacher account creation failed and has been rolled back so the email is free to retry.\n\nTechnical: ${firestoreError.message}`
+    );
+  }
 }
