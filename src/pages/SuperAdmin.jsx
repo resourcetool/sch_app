@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth }     from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { checkAndSendTrialExpiryWarnings } from '../services/trialExpiryService';
 import {
   isSuperAdmin, getAllSchools, getAllCodes, getAllAccessRequests,
   createRegistrationCode, renewSubscription, suspendSchool,
@@ -732,13 +733,123 @@ function EmailComposerPanel({ schools, userProfile }) {
 
 // ── ACTIVITY LOG PANEL ────────────────────────────────────────────
 const ACTION_LABELS = {
-  login:              { label: 'Logged in',          icon: '🔑', color: '#2196F3' },
-  scores_saved:       { label: 'Scores saved',        icon: '✏️', color: '#4CAF50' },
-  results_generated:  { label: 'Results generated',   icon: '📊', color: '#9C27B0' },
-  student_added:      { label: 'Student added',       icon: '👤', color: '#00BCD4' },
-  report_printed:     { label: 'Report printed',      icon: '🖨️', color: '#FF9800' },
-  settings_changed:   { label: 'Settings updated',    icon: '⚙️', color: '#607D8B' },
+  login:              { label: 'Logged in',            icon: '🔑', color: '#2196F3' },
+  scores_saved:       { label: 'Scores saved',          icon: '✏️', color: '#4CAF50' },
+  results_generated:  { label: 'Results generated',     icon: '📊', color: '#9C27B0' },
+  student_added:      { label: 'Student added',         icon: '👤', color: '#00BCD4' },
+  student_removed:    { label: 'Student removed',       icon: '🗑️', color: '#F44336' },
+  report_printed:     { label: 'Report printed',        icon: '🖨️', color: '#FF9800' },
+  settings_changed:   { label: 'Settings updated',      icon: '⚙️', color: '#607D8B' },
+  teacher_created:    { label: 'Teacher account created', icon: '👨‍🏫', color: '#009688' },
+  teacher_removed:    { label: 'Teacher deactivated',   icon: '🚫', color: '#795548' },
+  class_added:        { label: 'Class added',            icon: '🏫', color: '#3F51B5' },
+  class_updated:      { label: 'Class updated',          icon: '📝', color: '#607D8B' },
+  subject_added:      { label: 'Subject added',          icon: '📚', color: '#E91E63' },
+  promotion_run:      { label: 'Promotion run',          icon: '🚀', color: '#FF5722' },
+  deletion_requested: { label: 'Deletion requested',     icon: '🗑', color: '#F44336' },
+  deletion_cancelled: { label: 'Deletion cancelled',     icon: '↩️', color: '#4CAF50' },
 };
+
+// ── TRIAL EXPIRY WARNING BUTTON ───────────────────────────────────
+// Sends EmailJS warnings to trial schools approaching expiry.
+// De-duplicated — won't send the same threshold warning twice.
+function TrialExpiryButton({ schools }) {
+  const [sending,  setSending]  = useState(false);
+  const [results,  setResults]  = useState(null);
+  const [showInfo, setShowInfo] = useState(false);
+
+  async function handleSendWarnings() {
+    const trialCount = schools.filter(s =>
+      s.subscription?.isTrial && s.subscription?.status === 'active'
+    ).length;
+
+    if (trialCount === 0) {
+      alert('No active trial schools found.');
+      return;
+    }
+
+    if (!window.confirm(
+      `Send expiry warning emails to ${trialCount} trial school(s)?\n\n` +
+      `Emails are only sent for schools within 7, 3, or 1 day of expiry.\n` +
+      `Already-sent warnings for the same threshold are skipped (no duplicate spam).`
+    )) return;
+
+    setSending(true); setResults(null);
+    try {
+      const res = await checkAndSendTrialExpiryWarnings(schools);
+      setResults(res);
+      setShowInfo(true);
+    } catch (err) {
+      alert('Failed to send warnings: ' + err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={handleSendWarnings}
+        disabled={sending}
+        className="btn btn-warning btn-sm"
+        title="Send EmailJS expiry warnings to trial schools within 7, 3, or 1 day of expiry"
+      >
+        {sending ? '⏳ Sending…' : '📧 Send Expiry Warnings'}
+      </button>
+
+      {showInfo && results && (
+        <div className="modal-overlay" onClick={() => setShowInfo(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <span className="modal-title">Expiry Warning Results</span>
+              <button onClick={() => setShowInfo(false)} className="btn btn-ghost btn-sm">✕</button>
+            </div>
+            <div className="modal-body">
+              {results.sent.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, color: '#2e7d32', marginBottom: 6 }}>✓ Sent ({results.sent.length})</div>
+                  {results.sent.map((r, i) => (
+                    <div key={i} style={{ fontSize: '.82rem', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                      <strong>{r.school}</strong> — {r.daysRemaining}d remaining → {r.email}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {results.skipped.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, color: '#e65100', marginBottom: 6 }}>⏭ Skipped ({results.skipped.length})</div>
+                  {results.skipped.map((r, i) => (
+                    <div key={i} style={{ fontSize: '.8rem', color: 'var(--text-mid)', padding: '3px 0' }}>
+                      {r.school} — {r.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {results.failed.length > 0 && (
+                <div>
+                  <div style={{ fontWeight: 700, color: '#c62828', marginBottom: 6 }}>✗ Failed ({results.failed.length})</div>
+                  {results.failed.map((r, i) => (
+                    <div key={i} style={{ fontSize: '.8rem', color: '#c62828', padding: '3px 0' }}>
+                      {r.school} — {r.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {results.sent.length === 0 && results.failed.length === 0 && (
+                <div style={{ color: 'var(--text-mid)', fontSize: '.85rem' }}>
+                  No warnings needed right now. All trial schools are either outside the warning window or already notified.
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowInfo(false)} className="btn btn-primary">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function ActivityLogPanel({ schools }) {
   const [selectedSchool, setSelectedSchool] = useState('');
@@ -855,9 +966,11 @@ function ActivityLogPanel({ schools }) {
                     </div>
                     <div style={{ fontSize: '.76rem', color: 'var(--text-mid)', marginTop: 1 }}>
                       {log.userEmail}
+                      {log.details?.role && ` · ${log.details.role.charAt(0).toUpperCase() + log.details.role.slice(1)}`}
+                      {(log.details?.firstName || log.details?.lastName) && ` · ${[log.details.firstName, log.details.lastName].filter(Boolean).join(' ')}`}
+                      {log.details?.teacherName && ` · ${log.details.teacherName}`}
                       {log.details?.classId && ` · Class: ${log.details.classId?.substring(0, 8)}…`}
                       {log.details?.count && ` · ${log.details.count} records`}
-                      {log.details?.role && ` · Role: ${log.details.role}`}
                     </div>
                     <div style={{ fontSize: '.7rem', color: 'var(--text-lt)', marginTop: 1 }}>
                       {formatLogTime(log.timestamp)}
@@ -1520,9 +1633,12 @@ export default function SuperAdmin() {
               <div className="card">
                 <div className="card-header">
                   <span className="card-title">All Schools</span>
-                  <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
-                    + Generate Code
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <TrialExpiryButton schools={schools} />
+                    <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
+                      + Generate Code
+                    </button>
+                  </div>
                 </div>
                 <div className="filter-bar">
                   <input

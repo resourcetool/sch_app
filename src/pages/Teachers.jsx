@@ -1,19 +1,59 @@
 // src/pages/Teachers.jsx
-// Redesigned for speed:
-// - Inline quick-add row: name + email + password → teacher created immediately
-// - Full edit modal: assign classes and subjects with pill toggles
-// - Class/subject assignment shown inline as badges
-// - Creating a teacher also creates their Firebase Auth account
-// - All data written via writeRecord (IDB → Firestore)
+//
+// FIXES:
+// 1. Teacher last login time is now displayed in the table — fetched from Firestore
+//    users collection (lastLoginAt field updated by AuthContext on every login).
+//    School admin can see at a glance when each teacher last signed in.
+// 2. Atomic teacher creation — if Firestore profile write fails, Firebase Auth
+//    account is deleted automatically (handled in teacherAuthService).
+//    Admins can safely retry with the same email after a failure.
+// 3. Activity logging when admin creates or removes a teacher — visible in
+//    super admin's Activity Log panel.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSchool }    from '../contexts/SchoolContext';
+import { useAuth }      from '../contexts/AuthContext';
 import { v4 as uuidv4 } from 'uuid';
 import { writeRecord }  from '../services/syncService';
 import { idbGetAll }    from '../services/indexedDB';
 import { createTeacherAccount } from '../services/teacherAuthService';
-import { doc, setDoc }            from 'firebase/firestore';
-import { db }                     from '../services/firebase';
+import { logActivity }  from '../services/superAdminService';
+import { db }           from '../services/firebase';
+import {
+  collection, query, where, getDocs, updateDoc,
+} from 'firebase/firestore';
+
+// ── LAST LOGIN DISPLAY ────────────────────────────────────────────
+function LastLoginBadge({ lastLoginAt }) {
+  if (!lastLoginAt) {
+    return <span style={{ fontSize: '.72rem', color: '#aaa', fontStyle: 'italic' }}>Never logged in</span>;
+  }
+  const date = new Date(lastLoginAt);
+  const now  = Date.now();
+  const diff = now - lastLoginAt;
+  const mins = Math.floor(diff / 60000);
+  const hrs  = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+
+  let relative;
+  if (mins < 2)   relative = 'Just now';
+  else if (mins < 60) relative = `${mins}m ago`;
+  else if (hrs < 24)  relative = `${hrs}h ago`;
+  else if (days === 1) relative = 'Yesterday';
+  else if (days < 7)   relative = `${days}d ago`;
+  else relative = date.toLocaleDateString('en-GH', { day: 'numeric', month: 'short' });
+
+  const fullTime = date.toLocaleString('en-GH', { dateStyle: 'medium', timeStyle: 'short', hour12: true });
+
+  return (
+    <span title={fullTime} style={{
+      fontSize: '.72rem', color: days < 3 ? '#2e7d32' : days < 14 ? '#e65100' : '#666',
+      fontWeight: days < 3 ? 700 : 400,
+    }}>
+      {relative}
+    </span>
+  );
+}
 
 // ── EDIT MODAL ────────────────────────────────────────────────────
 function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave }) {
@@ -35,13 +75,11 @@ function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave })
     }));
   }
 
-  // When a class is toggled, also show its subjects for easy assignment
   const selectedClassSubjects = subjects.filter(s =>
     form.assignedClasses.some(cid => s.classIds?.includes(cid))
   );
 
   function assignClassSubjects() {
-    // One-click: assign all subjects belonging to assigned classes
     const ids = selectedClassSubjects.map(s => s.id);
     setForm(f => ({ ...f, assignedSubjects: [...new Set([...f.assignedSubjects, ...ids])] }));
   }
@@ -95,7 +133,7 @@ function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave })
               )}
             </div>
 
-            {/* ── CLASS ASSIGNMENT ── */}
+            {/* CLASS ASSIGNMENT */}
             <div style={{ margin: '14px 0 6px', fontWeight: 700, color: 'var(--navy)', fontSize: '.88rem' }}>
               Assigned Classes
             </div>
@@ -124,7 +162,7 @@ function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave })
               )
             }
 
-            {/* ── SUBJECT ASSIGNMENT ── */}
+            {/* SUBJECT ASSIGNMENT */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 6px' }}>
               <div style={{ fontWeight: 700, color: 'var(--navy)', fontSize: '.88rem' }}>Assigned Subjects</div>
               {selectedClassSubjects.length > 0 && (
@@ -175,7 +213,9 @@ function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave })
 // ── MAIN PAGE ─────────────────────────────────────────────────────
 export default function Teachers() {
   const { classes, subjects, schoolId } = useSchool();
+  const { userProfile }                 = useAuth();
   const [teachers,   setTeachers]   = useState([]);
+  const [loginTimes, setLoginTimes] = useState({}); // uid → lastLoginAt
   const [editing,    setEditing]    = useState(null);
   const [showModal,  setShowModal]  = useState(false);
   const [error,      setError]      = useState('');
@@ -191,7 +231,26 @@ export default function Teachers() {
   const load = useCallback(async () => {
     if (!schoolId) return;
     const data = await idbGetAll('teachers', 'schoolId', schoolId);
-    setTeachers(data.sort((a, b) => a.lastName?.localeCompare(b.lastName || '') || 0));
+    const sorted = data.sort((a, b) => a.lastName?.localeCompare(b.lastName || '') || 0);
+    setTeachers(sorted);
+
+    // Fetch lastLoginAt for all teachers from Firestore users collection
+    // This is separate from IDB teachers collection — users doc is updated on login
+    if (sorted.length > 0) {
+      try {
+        const q    = query(collection(db, 'users'), where('schoolId', '==', schoolId), where('role', '==', 'teacher'));
+        const snap = await getDocs(q);
+        const times = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          if (data.email) times[data.email] = data.lastLoginAt || null;
+          if (data.teacherId) times[data.teacherId] = data.lastLoginAt || null;
+        });
+        setLoginTimes(times);
+      } catch (err) {
+        console.warn('[Teachers] Could not fetch login times:', err.message);
+      }
+    }
   }, [schoolId]);
 
   useEffect(() => { load(); }, [load]);
@@ -199,11 +258,9 @@ export default function Teachers() {
   async function saveTeacher(form) {
     const id = editing?.id || uuidv4();
 
-    // Create Firebase Auth account for new teachers
     if (!editing) {
       if (!form.email || !form.password) throw new Error('Email and password are required to create a teacher account.');
       try {
-        // Uses secondary Firebase app so admin stays logged in
         await createTeacherAccount(form.email, form.password, {
           schoolId,
           firstName:        form.firstName,
@@ -212,6 +269,11 @@ export default function Teachers() {
           assignedClasses:  form.assignedClasses  || [],
           assignedSubjects: form.assignedSubjects || [],
         });
+        // Log teacher creation for super admin visibility
+        logActivity(schoolId, userProfile?.id || '', userProfile?.email || '', 'teacher_created', {
+          teacherName:  `${form.firstName} ${form.lastName}`,
+          teacherEmail: form.email,
+        });
       } catch (err) {
         if (err.code === 'auth/email-already-in-use') throw new Error('This email is already registered. Ask the teacher to log in instead.');
         throw err;
@@ -219,7 +281,6 @@ export default function Teachers() {
     } else {
       // Update user profile in Firestore too (assignments may have changed)
       try {
-        const { getDocs, query, collection, where, updateDoc } = await import('firebase/firestore');
         const q    = query(collection(db, 'users'), where('teacherId', '==', id));
         const snap = await getDocs(q);
         if (!snap.empty) {
@@ -271,18 +332,20 @@ export default function Teachers() {
     )) return;
     setError('');
     try {
-      // Mark teacher record as inactive in IDB/Firestore
       await writeRecord('teachers', teacher.id, {
         ...teacher, status: 'inactive', deactivatedAt: Date.now(),
       }, schoolId);
 
-      // Update their user document so they can't log in as this school's teacher
-      const { getDocs, query, collection, where, updateDoc } = await import('firebase/firestore');
       const q    = query(collection(db, 'users'), where('teacherId', '==', teacher.id));
       const snap = await getDocs(q);
       if (!snap.empty) {
         await updateDoc(snap.docs[0].ref, { status: 'inactive', role: 'inactive_teacher' });
       }
+
+      logActivity(schoolId, userProfile?.id || '', userProfile?.email || '', 'teacher_removed', {
+        teacherName: `${teacher.firstName} ${teacher.lastName}`,
+      });
+
       await load();
     } catch (err) {
       setError('Failed to remove teacher: ' + err.message);
@@ -338,7 +401,7 @@ export default function Teachers() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Teacher Table */}
       <div className="card">
         {teachers.length === 0 ? (
           <div className="empty-state">
@@ -351,13 +414,15 @@ export default function Teachers() {
               <thead>
                 <tr>
                   <th>#</th><th>Name</th><th>Email</th><th>Phone</th>
-                  <th>Classes</th><th>Subjects</th><th></th>
+                  <th>Classes</th><th>Subjects</th><th>Last Login</th><th>Status</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {teachers.map((t, i) => {
                   const clsNames  = getNames(t.assignedClasses,  classes);
                   const subjNames = getNames(t.assignedSubjects, subjects);
+                  // Look up login time by teacherId or email
+                  const lastLogin = loginTimes[t.id] || loginTimes[t.email] || null;
                   return (
                     <tr key={t.id}>
                       <td style={{ color: 'var(--text-lt)', width: 30 }}>{i + 1}</td>
@@ -377,6 +442,9 @@ export default function Teachers() {
                           ? <span className="badge badge-neutral" style={{ fontSize: '.7rem' }}>None</span>
                           : <span style={{ fontSize: '.75rem', color: 'var(--text-mid)' }}>{subjNames.join(', ')}</span>
                         }
+                      </td>
+                      <td>
+                        <LastLoginBadge lastLoginAt={lastLogin} />
                       </td>
                       <td>
                         <span className={`badge badge-${t.status === 'inactive' ? 'neutral' : 'success'}`}>

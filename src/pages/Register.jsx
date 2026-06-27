@@ -1,14 +1,11 @@
 // src/pages/Register.jsx
 //
-// Changes:
-// - handleValidateCode catch block now shows the actual error message instead of
-//   the generic "Validation failed. Check your connection..." message.
-//   Previously, even when validateCode() returned { valid: false, reason: '...' },
-//   if any Firestore error occurred the real reason was hidden.
-// - Added better inline display of the school name hint so users know exactly
-//   what name the code was issued for after a name mismatch.
-// - Code input auto-uppercases and auto-formats (adds dashes as user types).
-// - All existing registration logic preserved exactly.
+// FIXES:
+// 1. Terms & Conditions acceptance is now MANDATORY in Step 2 before account creation.
+//    Legal compliance requires this for all school registrations.
+// 2. Atomic error handling from registerAdmin() (handled in AuthContext) means
+//    failed registrations clean up their own Firebase Auth account automatically.
+// 3. All existing registration and code-validation logic preserved.
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -27,6 +24,7 @@ export default function Register() {
     code: '',
     academicYear: new Date().getFullYear() + '/' + (new Date().getFullYear() + 1),
     currentTerm: '1',
+    agreedToTerms: false,
   });
   const [error,   setError]   = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,14 +42,12 @@ export default function Register() {
     try {
       const result = await validateCode(form.accessCode, form.schoolName);
       if (!result.valid) {
-        // Show the specific reason — NOT a generic fallback
         setError(result.reason);
         return;
       }
       setCodeData(result.data);
       setStep(2);
     } catch (err) {
-      // Only shown for genuine network/Firestore errors, not validation failures
       console.error('validateCode error:', err);
       setError(
         'Could not connect to the server. Please check your internet connection and try again.\n\nIf the problem persists, contact your provider.'
@@ -65,6 +61,10 @@ export default function Register() {
     e.preventDefault();
     if (form.password !== form.confirm) { setError('Passwords do not match'); return; }
     if (form.password.length < 6)       { setError('Password must be at least 6 characters'); return; }
+    if (!form.agreedToTerms) {
+      setError('You must read and accept the Terms & Conditions to create your account.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -139,9 +139,6 @@ export default function Register() {
         {/* ── STEP 1: Validate Code ── */}
         {step === 1 && (
           <>
-            {/* Trial alternative — shown prominently since registration code
-                signup is now specifically for schools that have already paid
-                or are converting from a trial, not the only way in. */}
             <div style={{
               background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 12,
               padding: '14px 18px', marginBottom: 20, display: 'flex',
@@ -271,6 +268,44 @@ export default function Register() {
                   </select>
                 </div>
               </div>
+
+              {/* ── TERMS & CONDITIONS — MANDATORY ────────────────── */}
+              <div style={{
+                background: '#f8f9fa',
+                border: '2px solid var(--border)',
+                borderRadius: 10, padding: '14px 16px', marginTop: 4,
+              }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.agreedToTerms}
+                    onChange={e => update('agreedToTerms', e.target.checked)}
+                    style={{ marginTop: 2, width: 18, height: 18, accentColor: 'var(--navy)', flexShrink: 0 }}
+                  />
+                  <div style={{ fontSize: '.82rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>
+                    <strong style={{ color: 'var(--navy)' }}>I have read and agree to:</strong>
+                    <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                      {[
+                        ['/legal/terms',          'Terms of Service'],
+                        ['/legal/privacy',        'Privacy Policy'],
+                        ['/legal/subscription',   'Subscription Policy'],
+                        ['/legal/data-retention', 'Data Retention Policy'],
+                        ['/legal/data-security',  'Data Security Policy'],
+                      ].map(([to, label]) => (
+                        <a key={to} href={to} target="_blank" rel="noreferrer"
+                           style={{ color: 'var(--navy)', fontWeight: 700, fontSize: '.78rem', textDecoration: 'underline' }}>
+                          {label}
+                        </a>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: '.76rem', color: 'var(--text-lt)' }}>
+                      By checking this box you confirm you are authorised to register this school
+                      and agree to be bound by all of the above policies.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
               <button type="submit" className="btn btn-primary btn-lg" disabled={loading} style={{ marginTop: 8 }}>
                 {loading ? 'Creating Account…' : 'Create School Account →'}
               </button>
