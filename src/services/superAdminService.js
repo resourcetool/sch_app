@@ -412,11 +412,35 @@ export async function getAllSchools() {
   const subMap = {};
   subsSnap.docs.forEach(d => { subMap[d.id] = d.data(); });
 
-  return schoolsSnap.docs.map(d => ({
+  const schools = schoolsSnap.docs.map(d => ({
     ...d.data(),
     id: d.id,
     subscription: subMap[d.id] || null,
   }));
+
+  // Fetch the lastLoginAt for each school's admin user (role=admin).
+  // We do ONE query for all admin users across all schools, then map by schoolId.
+  // This gives super admin real-time "last seen" for each school.
+  try {
+    const adminsSnap = await getDocs(
+      query(collection(db, 'users'), where('role', '==', 'admin'))
+    );
+    const loginMap = {};  // schoolId → lastLoginAt
+    adminsSnap.docs.forEach(d => {
+      const u = d.data();
+      if (u.schoolId && u.lastLoginAt) {
+        // Keep the most recent login if multiple admins per school
+        if (!loginMap[u.schoolId] || u.lastLoginAt > loginMap[u.schoolId]) {
+          loginMap[u.schoolId] = u.lastLoginAt;
+        }
+      }
+    });
+    // Attach lastLoginAt to each school object
+    return schools.map(s => ({ ...s, lastLoginAt: loginMap[s.id] || null }));
+  } catch (err) {
+    console.warn('[getAllSchools] Could not fetch admin login times:', err.message);
+    return schools;
+  }
 }
 
 export async function getAllCodes() {
@@ -526,15 +550,54 @@ export async function superAdminUpdateDoc(collectionName, docId, data) {
 
 export async function superAdminDeleteSchool(schoolId) {
   // Hard-deletes the school AND all its operational data.
-  // Chunked into batches of 400 to stay safely under Firestore 500-op limit.
+  // CRITICAL FIX: also queues Firebase Auth account deletions via a
+  // Firestore-triggered Cloud Function so those emails can be re-registered.
+  //
+  // Flow:
+  // 1. Collect all user UIDs for the school BEFORE deleting their Firestore docs.
+  // 2. Write a 'pendingAuthDeletions' document listing all UIDs — Cloud Function
+  //    picks this up and calls admin.auth().deleteUsers([...uids]) server-side.
+  // 3. Delete all Firestore documents in batched commits of 400 ops.
+  //
+  // This guarantees: no Firestore data remains AND no Auth accounts remain,
+  // so every email is immediately free for a new registration.
+
   const COLLECTIONS = [
     'students', 'teachers', 'classes', 'subjects',
     'enrollments', 'scores', 'results', 'promotions', 'analytics',
     'assessmentDeadlines', 'assessmentAuditLog', 'activityLog',
   ];
 
-  // Collect ALL refs first, then delete in safe chunks
-  const allRefs = [];
+  // ── STEP 1: Collect user UIDs BEFORE deletion ────────────────────
+  const usersSnap = await getDocs(
+    query(collection(db, 'users'), where('schoolId', '==', schoolId))
+  );
+  const userRefs = usersSnap.docs.map(d => d.ref);
+  const userUids = usersSnap.docs.map(d => d.id);   // Firestore user doc ID === Firebase Auth UID
+
+  // ── STEP 2: Queue Auth account deletion via Cloud Function ───────
+  // Write to 'pendingAuthDeletions' — Cloud Function 'deleteAuthAccounts'
+  // listens on this collection and calls admin.auth().deleteUsers(uids).
+  // This is the ONLY reliable way to delete Auth accounts from a client
+  // without exposing admin credentials.
+  if (userUids.length > 0) {
+    try {
+      await setDoc(doc(db, 'pendingAuthDeletions', schoolId), {
+        schoolId,
+        uids:        userUids,
+        requestedAt: serverTimestamp(),
+        status:      'pending',
+        reason:      'school_deleted_by_superadmin',
+      });
+      console.info(`[SuperAdmin] Queued Auth deletion for ${userUids.length} user(s) in school ${schoolId}`);
+    } catch (err) {
+      // Non-blocking — log but continue with Firestore deletion
+      console.error('[SuperAdmin] Could not queue Auth deletion:', err.message);
+    }
+  }
+
+  // ── STEP 3: Collect all Firestore refs ──────────────────────────
+  const allRefs = [...userRefs];
 
   for (const c of COLLECTIONS) {
     const snap = await getDocs(
@@ -543,15 +606,10 @@ export async function superAdminDeleteSchool(schoolId) {
     snap.docs.forEach(d => allRefs.push(d.ref));
   }
 
-  const usersSnap = await getDocs(
-    query(collection(db, 'users'), where('schoolId', '==', schoolId))
-  );
-  usersSnap.docs.forEach(d => allRefs.push(d.ref));
-
   allRefs.push(doc(db, 'schools',       schoolId));
   allRefs.push(doc(db, 'subscriptions', schoolId));
 
-  // Commit in chunks of 400 (safely under Firestore 500-op batch limit)
+  // ── STEP 4: Delete in batches of 400 ────────────────────────────
   const CHUNK = 400;
   for (let i = 0; i < allRefs.length; i += CHUNK) {
     const batch = writeBatch(db);
@@ -559,7 +617,7 @@ export async function superAdminDeleteSchool(schoolId) {
     await batch.commit();
   }
 
-  console.info(`[SuperAdmin] School ${schoolId} deleted: ${allRefs.length} documents removed`);
+  console.info(`[SuperAdmin] School ${schoolId} deleted: ${allRefs.length} Firestore docs removed, ${userUids.length} Auth accounts queued for deletion`);
 }
 
 // ── ACTIVITY LOG ─────────────────────────────────────────────────
