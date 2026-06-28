@@ -492,7 +492,7 @@ function PendingDeletionsPanel({ userProfile, onRefresh }) {
 
   async function handleExecuteDelete(del) {
     if (!window.confirm(
-      `PERMANENTLY DELETE "${del.schoolName}"?\n\nThis removes all data permanently. Cannot be undone.\n\nType CONFIRM to proceed.`
+      `PERMANENTLY DELETE "${del.schoolName}"?\n\nThis removes all Firestore data AND all Firebase Auth login accounts (emails freed). Cannot be undone.\n\nType CONFIRM to proceed.`
     )) return;
     const typed = window.prompt('Type CONFIRM (all caps) to permanently delete:');
     if (typed !== 'CONFIRM') { alert('Deletion cancelled.'); return; }
@@ -502,7 +502,7 @@ function PendingDeletionsPanel({ userProfile, onRefresh }) {
       await superAdminDeleteSchool(del.id);
       setDeletions(d => d.filter(x => x.id !== del.id));
       onRefresh();
-      alert('School permanently deleted.');
+      alert(`✓ School "${del.schoolName}" deleted.\n\nAll Firebase Auth accounts queued for deletion — emails are now free for re-registration.`);
     } catch (err) { alert('Delete failed: ' + err.message); }
     finally { setActing(null); }
   }
@@ -1127,8 +1127,11 @@ function SchoolDataBrowser({ schools }) {
     const first = window.confirm(
       `⚠ WARNING — Delete ENTIRE school?\n\n` +
       `School: ${school.name}\n\n` +
-      `This will permanently delete ALL students, teachers, classes, subjects, ` +
-      `scores, results, and the school account itself from Firestore.\n\n` +
+      `This will permanently delete:\n` +
+      `• All students, teachers, classes, subjects, scores, results\n` +
+      `• The school account and subscription in Firestore\n` +
+      `• ALL Firebase Auth login accounts (emails freed for re-use)\n\n` +
+      `Auth account deletion runs automatically via Cloud Function.\n` +
       `This CANNOT be undone. Click OK to see final confirmation.`
     );
     if (!first) return;
@@ -1143,7 +1146,12 @@ function SchoolDataBrowser({ schools }) {
       await superAdminDeleteSchool(school.id);
       setData(null);
       setSelectedSchoolId('');
-      alert('School and all data permanently deleted.');
+      alert(
+        `✓ School "${school.name}" and all Firestore data deleted.\n\n` +
+        `Firebase Auth accounts for this school have been queued for deletion ` +
+        `and will be removed within seconds by the Cloud Function. ` +
+        `All their emails are now free for re-registration.`
+      );
     } catch (err) {
       alert('Delete school failed: ' + err.message);
     }
@@ -1654,7 +1662,7 @@ export default function SuperAdmin() {
                   <div className="table-wrap">
                     <table>
                       <thead>
-                        <tr><th>School</th><th>Plan</th><th>Status</th><th>Days Left</th><th>Backup</th><th>Monthly</th><th>Actions</th></tr>
+                        <tr><th>School</th><th>Plan</th><th>Status</th><th>Days Left</th><th>Last Login</th><th>Backup</th><th>Monthly</th><th>Actions</th></tr>
                       </thead>
                       <tbody>
                         {filteredSchools.map(s => {
@@ -1662,6 +1670,14 @@ export default function SuperAdmin() {
                           const status  = getSubscriptionStatus(sub);
                           const days    = daysRemaining(sub);
                           const monthly = sub ? (PLANS[sub.plan]?.price || 0) + (sub.backupAddon && sub.plan !== 'premium' ? 100 : 0) : 0;
+                          const loginTs = s.lastLoginAt;
+                          const loginAge = loginTs ? Math.floor((Date.now() - loginTs) / 86400000) : null;
+                          const loginLabel = loginTs == null ? '—'
+                            : loginAge === 0   ? 'Today'
+                            : loginAge === 1   ? 'Yesterday'
+                            : loginAge < 7     ? `${loginAge}d ago`
+                            : new Date(loginTs).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: '2-digit' });
+                          const loginFull = loginTs ? new Date(loginTs).toLocaleString('en-GH', { dateStyle: 'medium', timeStyle: 'short', hour12: true }) : null;
                           return (
                             <tr key={s.id} style={{
                               background:
@@ -1676,6 +1692,18 @@ export default function SuperAdmin() {
                               <td><StatusBadge status={status} /></td>
                               <td style={{ fontWeight: days < 7 ? 700 : 400, color: days < 7 ? 'var(--danger)' : 'inherit' }}>
                                 {sub ? `${days}d` : '—'}
+                              </td>
+                              <td title={loginFull || ''} style={{
+                                fontSize: '.78rem',
+                                color: loginAge == null ? '#bbb'
+                                  : loginAge === 0 ? '#2e7d32'
+                                  : loginAge <= 3  ? '#1b5e20'
+                                  : loginAge <= 14 ? '#e65100'
+                                  : '#999',
+                                fontWeight: loginAge != null && loginAge <= 1 ? 700 : 400,
+                                cursor: loginFull ? 'help' : 'default',
+                              }}>
+                                {loginLabel}
                               </td>
                               <td>{sub?.backupAddon ? <span className="badge badge-success">✓ Yes</span> : <span className="badge badge-neutral">No</span>}</td>
                               <td style={{ fontWeight: 700 }}>GHS {monthly || '—'}</td>
