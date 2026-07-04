@@ -304,6 +304,26 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
   };
 
   await setDoc(doc(db, 'subscriptions', schoolId), subscription);
+
+  // ── NOTIFY SUPER ADMIN VIA EMAILJS ───────────────────────────────
+  // Failure-safe: if EmailJS is not configured or the send fails, the trial
+  // request is still saved and visible in the SuperAdmin panel Requests tab.
+  // Super admins will always see it there even without the email.
+  sendAccessRequestNotification({
+    schoolName,
+    adminName:    '',
+    email:        adminEmail,
+    phone:        adminPhone,
+    schoolType:   'Free Trial Request',
+    region:       '—',
+    plan:         'Free Trial (21 days)',
+    studentCount: '—',
+    message:      `New free trial request submitted for "${schoolName}". Please review and approve or reject in the SuperAdmin panel → Requests tab.`,
+    submittedAt:  now,
+  }).catch(err => {
+    console.warn('[startFreeTrial] EmailJS notification failed silently:', err?.message);
+  });
+
   return subscription;
 }
 
