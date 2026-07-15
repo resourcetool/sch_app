@@ -520,12 +520,72 @@ export default function Login() {
             marginTop: 16,
             background: 'rgba(255,255,255,.08)',
             borderRadius: 12, padding: '14px 18px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
-            <div style={{ fontSize: '.7rem', opacity: .55, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.06em' }}>Starting from</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>
-              GHS 150<span style={{ fontSize: '.88rem', fontWeight: 400, opacity: .65 }}>/month</span>
+            <div>
+              <div style={{ fontSize: '.7rem', opacity: .55, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.06em' }}>Starting from</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>
+                GHS 150<span style={{ fontSize: '.88rem', fontWeight: 400, opacity: .65 }}>/month</span>
+              </div>
+              <div style={{ fontSize: '.76rem', opacity: .55, marginTop: 2 }}>or GHS 525 per term — save every term</div>
             </div>
-            <div style={{ fontSize: '.76rem', opacity: .55, marginTop: 2 }}>First 21 days completely free</div>
+            <Link
+              to="/pricing"
+              style={{
+                background: 'rgba(255,255,255,.15)',
+                border: '1px solid rgba(255,255,255,.25)',
+                color: '#fff', borderRadius: 8,
+                padding: '8px 14px', textDecoration: 'none',
+                fontSize: '.78rem', fontWeight: 700, whiteSpace: 'nowrap',
+              }}
+            >
+              View Plans →
+            </Link>
+          </div>
+
+          {/* ── USER GUIDE DOWNLOAD ── */}
+          <div style={{
+            marginTop: 16,
+            background: 'rgba(255,255,255,.06)',
+            border: '1px solid rgba(255,255,255,.12)',
+            borderRadius: 12, padding: '14px 18px',
+          }}>
+            <div style={{ fontSize: '.72rem', fontWeight: 700, opacity: .5, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+              📖 User Guide
+            </div>
+            <div style={{ fontSize: '.82rem', opacity: .8, marginBottom: 12, lineHeight: 1.55 }}>
+              Download the full SchoolMS usage manual — covers every feature with step-by-step instructions.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href="/SchoolMS_Full_Manual.pdf"
+                download="SchoolMS_Usage_Manual.pdf"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(255,255,255,.15)',
+                  border: '1px solid rgba(255,255,255,.25)',
+                  borderRadius: 8, padding: '8px 14px',
+                  color: '#fff', textDecoration: 'none',
+                  fontWeight: 700, fontSize: '.8rem',
+                }}
+              >
+                <span>📄</span> Download PDF
+              </a>
+              <a
+                href="/SchoolMS_Full_Manual.docx"
+                download="SchoolMS_Usage_Manual.docx"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(255,255,255,.08)',
+                  border: '1px solid rgba(255,255,255,.15)',
+                  borderRadius: 8, padding: '8px 14px',
+                  color: 'rgba(255,255,255,.75)', textDecoration: 'none',
+                  fontWeight: 600, fontSize: '.8rem',
+                }}
+              >
+                <span>📝</span> Word (.docx)
+              </a>
+            </div>
           </div>
         </div>
 
@@ -702,6 +762,31 @@ export default function Login() {
                     {label}
                   </Link>
                 ))}
+              </div>
+
+              {/* ── GUIDE DOWNLOAD (right panel — visible on mobile) ── */}
+              <div style={{
+                marginTop: 14, paddingTop: 14,
+                borderTop: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: 10, flexWrap: 'wrap',
+              }}>
+                <span style={{ fontSize: '.75rem', color: 'var(--text-lt)' }}>📖 User Guide:</span>
+                <a
+                  href="/SchoolMS_Full_Manual.pdf"
+                  download="SchoolMS_Usage_Manual.pdf"
+                  style={{ fontSize: '.75rem', color: 'var(--navy)', fontWeight: 700, textDecoration: 'none' }}
+                >
+                  ⬇ PDF
+                </a>
+                <span style={{ color: '#ddd', fontSize: '.7rem' }}>|</span>
+                <a
+                  href="/SchoolMS_Full_Manual.docx"
+                  download="SchoolMS_Usage_Manual.docx"
+                  style={{ fontSize: '.75rem', color: 'var(--navy)', fontWeight: 700, textDecoration: 'none' }}
+                >
+                  ⬇ Word
+                </a>
               </div>
             </>
           )}
