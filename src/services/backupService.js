@@ -67,6 +67,124 @@ export async function exportStudentsAsExcel(schoolId) {
   XLSX.writeFile(wb, `students_export_${Date.now()}.xlsx`);
 }
 
+// ── STUDENT IMPORT TEMPLATE ───────────────────────────────────────
+// Generates and downloads a pre-formatted Excel template that schools
+// fill in with their students and upload via Import Excel.
+// Matches exactly the columns that importStudentsFromExcel() reads.
+export function downloadStudentImportTemplate() {
+  // ── COLUMN DEFINITIONS ─────────────────────────────────────────
+  // Order must match importStudentsFromExcel() expectations.
+  const COLS = [
+    { header: 'First Name',     width: 18, required: true,  example1: 'Kwame',              example2: 'Abena',       example3: 'Kofi'         },
+    { header: 'Last Name',      width: 18, required: true,  example1: 'Mensah',             example2: 'Asante',      example3: 'Boateng'      },
+    { header: 'Gender',         width: 12, required: true,  example1: 'Male',               example2: 'Female',      example3: 'Male'         },
+    { header: 'Date of Birth',  width: 16, required: false, example1: '15/08/2012',         example2: '22/03/2011',  example3: '05/11/2010'   },
+    { header: 'Guardian Name',  width: 22, required: false, example1: 'Mr Isaac Mensah',    example2: 'Mrs Grace Asante', example3: 'Mr Samuel Boateng' },
+    { header: 'Guardian Phone', width: 18, required: false, example1: '0244123456',         example2: '0541987654',  example3: '0208765432'   },
+    { header: 'Address',        width: 26, required: false, example1: 'Kasoa, Central Region', example2: 'Accra, Greater Accra', example3: 'Kumasi, Ashanti' },
+  ];
+
+  // ── BUILD WORKBOOK ─────────────────────────────────────────────
+  const wb = XLSX.utils.book_new();
+
+  // ── SHEET 1: Template (the one they fill in) ──────────────────
+  const sheetData = [
+    // Row 1: title row (merged visually via header style)
+    ['SchoolMS — Student Import Template — Fill from Row 5 downwards. Do NOT rename the headers in Row 4.'],
+    // Row 2: column key
+    ['🔴 Red header = Required    🟢 Green header = Optional (leave blank if not known)'],
+    // Row 3: blank spacer
+    [],
+    // Row 4: column headers
+    COLS.map(c => c.header),
+    // Rows 5-7: example students (light grey, labelled)
+    COLS.map(c => c.example1),
+    COLS.map(c => c.example2),
+    COLS.map(c => c.example3),
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+  // Column widths
+  ws['!cols'] = COLS.map(c => ({ wch: c.width }));
+
+  // Merge title row across all columns
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: COLS.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: COLS.length - 1 } },
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Students');
+
+  // ── SHEET 2: Instructions ─────────────────────────────────────
+  const instrData = [
+    ['SchoolMS Student Import — How to Use This Template'],
+    [''],
+    ['STEP 1 — Open the "Students" sheet (the other tab)'],
+    ['• Rows 5, 6, 7 are examples — delete them or type over them.'],
+    ['• Add one student per row starting from Row 5.'],
+    ['• You can add up to 500 students in one import.'],
+    [''],
+    ['STEP 2 — Required columns (must be filled for every student)'],
+    ['• First Name     — student's first name'],
+    ['• Last Name      — student's surname / family name'],
+    ['• Gender         — type exactly:  Male  or  Female  or  Other'],
+    [''],
+    ['STEP 3 — Optional columns (leave blank if not known)'],
+    ['• Date of Birth   — format: DD/MM/YYYY  e.g.  15/08/2012'],
+    ['• Guardian Name  — parent or guardian full name'],
+    ['• Guardian Phone — Ghana mobile number, 10 digits  e.g. 0244123456'],
+    ['• Address        — home address or area  e.g. Kasoa, Central Region'],
+    [''],
+    ['STEP 4 — Save the file as Excel (.xlsx)'],
+    ['• File → Save As → choose "Excel Workbook (.xlsx)"'],
+    ['• Do NOT save as .csv or .xls'],
+    [''],
+    ['STEP 5 — Upload in SchoolMS'],
+    ['• Go to Students page → click "⬇ Get Template / ⬆ Import Excel"'],
+    ['• Select your saved file'],
+    ['• A preview appears — review it'],
+    ['• Click Confirm Import'],
+    ['• Students are created and enrolled in the class you select'],
+    [''],
+    ['COMMON MISTAKES'],
+    ['✗  Do not leave First Name or Last Name blank — those rows are skipped'],
+    ['✗  Gender must be in English: Male / Female / Other'],
+    ['✗  Do not rename the column headers'],
+    ['✗  Do not save as .csv — save as .xlsx only'],
+    ['✗  Do not put two students in one row'],
+    [''],
+    ['NEED HELP?'],
+    ['WhatsApp: 0549548274   |   Email: schoolpilot132@gmail.com'],
+  ];
+
+  const ws2 = XLSX.utils.aoa_to_sheet(instrData);
+  ws2['!cols'] = [{ wch: 80 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Instructions');
+
+  // ── SHEET 3: Sample — 10 pre-filled students ──────────────────
+  const sampleData = [
+    COLS.map(c => c.header),
+    ['Kwame',   'Mensah',   'Male',   '15/08/2012', 'Mr Isaac Mensah',     '0244123456', 'Kasoa, Central Region'],
+    ['Abena',   'Asante',   'Female', '22/03/2011', 'Mrs Grace Asante',    '0541987654', 'Accra, Greater Accra'],
+    ['Kofi',    'Boateng',  'Male',   '05/11/2010', 'Mr Samuel Boateng',   '0208765432', 'Kumasi, Ashanti Region'],
+    ['Ama',     'Owusu',    'Female', '18/07/2013', 'Mrs Akua Owusu',      '0243001122', 'Takoradi, Western Region'],
+    ['Yaw',     'Agyeman',  'Male',   '30/01/2012', 'Mr Kofi Agyeman',     '0554321098', 'Tema, Greater Accra'],
+    ['Akosua',  'Darko',    'Female', '11/09/2011', 'Mrs Esi Darko',       '0201234567', 'Cape Coast, Central Region'],
+    ['Kwabena', 'Antwi',    'Male',   '25/04/2013', 'Mr Yaw Antwi',        '0249876543', 'Sunyani, Bono Region'],
+    ['Adwoa',   'Frimpong', 'Female', '08/12/2012', 'Mrs Adwoa Frimpong',  '0501122334', 'Ho, Volta Region'],
+    ['Kojo',    'Amoah',    'Male',   '14/06/2011', 'Mr Kojo Amoah',       '0244556677', 'Wa, Upper West Region'],
+    ['Efua',    'Tetteh',   'Female', '03/02/2013', 'Mrs Efua Tetteh',     '0208899001', 'Accra, Greater Accra'],
+  ];
+
+  const ws3 = XLSX.utils.aoa_to_sheet(sampleData);
+  ws3['!cols'] = COLS.map(c => ({ wch: c.width }));
+  XLSX.utils.book_append_sheet(wb, ws3, 'Sample — 10 Students');
+
+  // ── DOWNLOAD ──────────────────────────────────────────────────
+  XLSX.writeFile(wb, 'SchoolMS_Student_Import_Template.xlsx');
+}
+
 export async function exportResultsAsExcel(schoolId, classId, academicYear, term) {
   const results = await idbGetAll('results', 'schoolId', schoolId);
   const filtered = results.filter(r =>
