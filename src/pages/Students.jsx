@@ -278,12 +278,31 @@ export default function Students() {
     if (!file) return;
     setImporting(true);
     try {
-      const rows   = await importStudentsFromExcel(file, schoolId);
+      const rows = await importStudentsFromExcel(file, schoolId);
+      if (rows.length === 0) {
+        alert(
+          'No students found in the file.\n\n' +
+          'Make sure you are using the SchoolMS template and that:\n' +
+          '• First Name and Last Name columns are filled in\n' +
+          '• The file is saved as .xlsx (not .csv)\n' +
+          '• You deleted or replaced the example rows before saving\n\n' +
+          'Download a fresh template using the "⬇ Download Template" button.'
+        );
+        return;
+      }
       const result = await importStudentsFromArray(schoolId, rows, school?.code || 'STU', students.length);
-      alert(`✓ Imported ${result.success.length} students.${result.errors.length ? `\n${result.errors.length} errors — check console.` : ''}`);
+      const msg = result.errors.length
+        ? `✓ Imported ${result.success.length} student(s).\n\n` +
+          `${result.errors.length} row(s) were skipped — likely duplicate student IDs or missing required fields.`
+        : `✓ Successfully imported ${result.success.length} student(s).`;
+      alert(msg);
       await load();
-    } catch (err) { alert('Import failed: ' + err.message); }
-    finally { setImporting(false); e.target.value = ''; }
+    } catch (err) {
+      alert('Import failed: ' + err.message + '\n\nMake sure the file is a valid .xlsx Excel file.');
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
   }
 
   return (
