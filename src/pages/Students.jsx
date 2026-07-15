@@ -15,7 +15,7 @@ import {
   getStudents, createStudent, updateStudent,
   enrollStudent, getEnrollments, importStudentsFromArray, removeStudent,
 } from '../services/studentService';
-import { importStudentsFromExcel } from '../services/backupService';
+import { importStudentsFromExcel, downloadStudentImportTemplate } from '../services/backupService';
 
 // ── EDIT MODAL ────────────────────────────────────────────────────
 function StudentModal({ student, onClose, onSave }) {
@@ -291,8 +291,16 @@ export default function Students() {
       <div className="page-header">
         <h1>Students <span style={{ fontSize: '.85rem', fontWeight: 400, color: 'var(--text-lt)' }}>({students.length})</span></h1>
         {isAdmin && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={downloadStudentImportTemplate}
+              title="Download the Excel template, fill it in with your students, then use Import Excel to upload"
+              style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              ⬇ Download Template
+            </button>
+            <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
               {importing ? '⏳ Importing…' : '⬆ Import Excel'}
               <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImport} />
             </label>
@@ -359,9 +367,17 @@ export default function Students() {
               {qAdding ? '…' : '+ Add'}
             </button>
           </form>
-          <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6 }}>
-            Press Enter to add and continue. Student is auto-enrolled if a class is selected.
-            Use <strong>+ Full Add</strong> for DOB, guardian, address.
+          <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            <span>Press Enter to add and continue. Student is auto-enrolled if a class is selected. Use <strong>+ Full Add</strong> for DOB, guardian, address.</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              <span style={{ color: '#aaa' }}>Adding many students?</span>
+              <button
+                onClick={downloadStudentImportTemplate}
+                style={{ background: 'none', border: 'none', color: 'var(--navy)', cursor: 'pointer', fontWeight: 700, fontSize: '.72rem', padding: 0, textDecoration: 'underline' }}
+              >
+                ⬇ Download Excel Template
+              </button>
+            </span>
           </div>
         </div>
       )}
