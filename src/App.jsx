@@ -38,6 +38,7 @@ import Settings                                     from './pages/Settings';
 import SuperAdmin                                   from './pages/SuperAdmin';
 import SubscriptionExpired                          from './pages/SubscriptionExpired';
 import Training                                     from './pages/Training';
+import Pricing                                      from './pages/Pricing';
 import AssessmentDeadlines                          from './pages/AssessmentDeadlines';
 
 function SubscriptionGuard({ children }) {
@@ -77,6 +78,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/login"          element={<Login />} />
         <Route path="/training"       element={<Training />} />
+        <Route path="/pricing"        element={<Pricing />} />
         <Route path="/register"       element={<Register />} />
         <Route path="/trial"          element={<TrialSignup />} />
         <Route path="/request-access" element={<RequestAccess />} />
@@ -124,6 +126,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login"          element={<Navigate to="/dashboard" replace />} />
       <Route path="/training"       element={<Training />} />
+      <Route path="/pricing"        element={<Pricing />} />
       <Route path="/register"       element={<Navigate to="/dashboard" replace />} />
       <Route path="/trial"          element={<Navigate to="/dashboard" replace />} />
       <Route path="/request-access" element={<RequestAccess />} />
