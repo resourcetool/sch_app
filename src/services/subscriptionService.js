@@ -18,28 +18,60 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 // ── PLAN DEFINITIONS ──────────────────────────────────────────────
+// ── BILLING CYCLES ──────────────────────────────────────────────
+// Schools can pay monthly OR termly (once per school term — 3x/year).
+// Termly is a small saving AND more practical for Ghanaian schools
+// that operate on a term budget rather than a monthly salary cycle.
+//
+// Monthly:  pay every 30 days
+// Termly:   pay once per term (~120 days = 4 months)
+//           priced at 3.5 months instead of 4 → small saving built in
+//           so termly feels like a reward, not a trap
+
+export const BILLING_CYCLES = {
+  monthly: {
+    id:           'monthly',
+    label:        'Monthly',
+    durationDays: 30,
+    // multiplier = 1 — base price as listed
+    multiplier:   1,
+    saving:       null,
+  },
+  termly: {
+    id:           'termly',
+    label:        'Per Term',
+    durationDays: 120,   // ~1 school term (4 months)
+    // School pays for 3.5 months instead of 4 — saves half a month
+    multiplier:   3.5,
+    saving:       'Save half a month every term',
+  },
+};
+
 export const PLANS = {
   trial: {
     id: 'trial',
     name: 'Free Trial',
     price: 0,
     maxStudents: 50,
-    durationDays: 21,        // outer time bound — milestones can end it sooner
+    durationDays: 21,
     features: {
       backup: false,
       analytics: true,
       promotion: true,
-      watermark: true,      // PDFs have watermark during trial
+      watermark: true,
       multiAdmin: false,
-      prioritySupport: false
+      prioritySupport: false,
     },
     color: '#8898aa',
-    badge: 'Trial'
+    badge: 'Trial',
+    tagline: 'Try everything free',
+    highlight: false,
   },
   starter: {
     id: 'starter',
     name: 'Starter',
-    price: 150,
+    price: 150,           // GHS per month
+    termlyPrice: 525,     // GHS per term (3.5 × 150) — saves GHS 75 vs monthly
     maxStudents: 200,
     durationDays: 30,
     features: {
@@ -48,15 +80,19 @@ export const PLANS = {
       promotion: true,
       watermark: false,
       multiAdmin: false,
-      prioritySupport: false
+      prioritySupport: false,
     },
     color: '#2980b9',
-    badge: 'Starter'
+    badge: 'Starter',
+    tagline: 'Perfect for small schools',
+    highlight: false,
+    bestFor: 'Schools with up to 200 students',
   },
   pro: {
     id: 'pro',
     name: 'Pro',
-    price: 250,
+    price: 250,           // GHS per month
+    termlyPrice: 875,     // GHS per term (3.5 × 250) — saves GHS 125 vs monthly
     maxStudents: 99999,
     durationDays: 30,
     features: {
@@ -65,15 +101,19 @@ export const PLANS = {
       promotion: true,
       watermark: false,
       multiAdmin: false,
-      prioritySupport: false
+      prioritySupport: false,
     },
     color: '#0f3460',
-    badge: 'Pro'
+    badge: 'Pro',
+    tagline: 'Most popular choice',
+    highlight: true,      // shown as recommended
+    bestFor: 'Growing schools that want full analytics',
   },
   premium: {
     id: 'premium',
     name: 'Premium',
-    price: 400,
+    price: 400,           // GHS per month
+    termlyPrice: 1400,    // GHS per term (3.5 × 400) — saves GHS 200 vs monthly
     maxStudents: 99999,
     durationDays: 30,
     features: {
@@ -82,14 +122,34 @@ export const PLANS = {
       promotion: true,
       watermark: false,
       multiAdmin: true,
-      prioritySupport: true
+      prioritySupport: true,
     },
     color: '#e94560',
-    badge: 'Premium'
-  }
+    badge: 'Premium',
+    tagline: 'Everything included',
+    highlight: false,
+    bestFor: 'Schools that want zero worries',
+  },
 };
 
-export const BACKUP_ADDON_PRICE = 100; // GHS/month
+export const BACKUP_ADDON_PRICE         = 100;  // GHS/month
+export const BACKUP_ADDON_TERMLY_PRICE  = 350;  // GHS/term (3.5 × 100) — saves GHS 50
+
+// Helper — get the price for a plan + billing cycle combination
+export function getPlanPrice(planId, cycle = 'monthly') {
+  const plan = PLANS[planId];
+  if (!plan || !plan.price) return 0;
+  return cycle === 'termly' ? (plan.termlyPrice || Math.round(plan.price * 3.5)) : plan.price;
+}
+
+// Helper — get termly saving vs paying monthly for 4 months
+export function getTermlySaving(planId) {
+  const plan = PLANS[planId];
+  if (!plan || !plan.price) return 0;
+  const monthly4 = plan.price * 4;
+  const termly   = plan.termlyPrice || Math.round(plan.price * 3.5);
+  return monthly4 - termly;
+}
 
 // ── TRIAL MILESTONE CHECK ─────────────────────────────────────────
 // Called by generateResults() and finalizeResults() in scoreService.js
