@@ -42,7 +42,7 @@ const SECTIONS = [
         title:    'How to Request a Free Trial',
         duration: '2 min',
         desc:     'See how to sign up, what information you need, and what happens after you submit your trial request.',
-        url:      'https://www.youtube.com/embed/REPLACE_ME',
+        url:      'https://drive.google.com/file/d/1FfZiWtIJ7ti0EhH8xKLFZL4IsarZEjh8/view',
       },
       {
         id:       'gs-2',
