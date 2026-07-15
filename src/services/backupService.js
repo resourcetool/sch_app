@@ -223,18 +223,43 @@ export async function importStudentsFromExcel(file, schoolId) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws);
-        resolve(rows.map(row => ({
-          firstName: row['First Name'] || row['firstName'] || '',
-          lastName: row['Last Name'] || row['lastName'] || '',
-          dateOfBirth: row['Date of Birth'] || row['dateOfBirth'] || '',
-          gender: row['Gender'] || row['gender'] || '',
-          guardianName: row['Guardian Name'] || row['guardianName'] || '',
-          guardianPhone: row['Guardian Phone'] || row['guardianPhone'] || '',
-          address: row['Address'] || row['address'] || ''
-        })));
+        const wb   = XLSX.read(e.target.result, { type: 'array' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+
+        // The template has 3 header rows before the column names:
+        //   Row 1 — title banner
+        //   Row 2 — subtitle / key
+        //   Row 3 — legend (red/green explanation)
+        //   Row 4 — actual column headers  ← range: 3 (0-indexed)
+        // If the file has NO header rows (plain list starting row 1),
+        // sheet_to_json still works because it finds 'First Name' on row 1.
+        // We try range:3 first; if that yields no 'First Name' column we
+        // fall back to range:0 so plain files still import correctly.
+
+        let rows = XLSX.utils.sheet_to_json(ws, { range: 3, defval: '' });
+
+        // Fallback: if 'First Name' not found at range:3, try from row 1
+        const hasHeaders = rows.length > 0 &&
+          ('First Name' in rows[0] || 'firstName' in rows[0]);
+        if (!hasHeaders) {
+          rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        }
+
+        // Filter out example/blank rows — skip rows where both
+        // First Name and Last Name are empty
+        const students = rows
+          .map(row => ({
+            firstName:    (row['First Name']    || row['firstName']    || '').toString().trim(),
+            lastName:     (row['Last Name']     || row['lastName']     || '').toString().trim(),
+            dateOfBirth:  (row['Date of Birth'] || row['dateOfBirth']  || '').toString().trim(),
+            gender:       (row['Gender']        || row['gender']       || '').toString().trim(),
+            guardianName: (row['Guardian Name'] || row['guardianName'] || '').toString().trim(),
+            guardianPhone:(row['Guardian Phone']|| row['guardianPhone']|| '').toString().trim(),
+            address:      (row['Address']       || row['address']      || '').toString().trim(),
+          }))
+          .filter(s => s.firstName && s.lastName); // skip blank/example rows
+
+        resolve(students);
       } catch (err) {
         reject(err);
       }
