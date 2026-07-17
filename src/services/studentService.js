@@ -9,7 +9,7 @@ import { v4 as uuidv4 }                        from 'uuid';
 import { collection, getDocs, query, where }   from 'firebase/firestore';
 import { db }                                   from './firebase';
 import { idbGetAll, idbGet, idbPut, idbPutMany } from './indexedDB';
-import { writeRecord }                           from './syncService';
+import { writeRecord, deleteRecord } from './syncService';
 
 export function generateStudentCode(schoolCode, count) {
   return `${schoolCode}-${String(count + 1).padStart(4, '0')}`;
@@ -171,4 +171,18 @@ export async function removeStudent(schoolId, studentId) {
   }
 
   return updated;
+}
+
+// ── PERMANENTLY DELETE STUDENT ──────────────────────────────────────
+// Hard-deletes the student record from IDB and Firestore (not a status
+// change). Also removes all of their enrollment records so no stale
+// enrollment references a deleted student. This is irreversible —
+// unlike removeStudent() above, past scores/results attached to this
+// studentId are left in place but will no longer resolve to a name.
+export async function deleteStudentPermanently(schoolId, studentId) {
+  const enrollments = await getEnrollments(schoolId, { studentId });
+  for (const enr of enrollments) {
+    await deleteRecord('enrollments', enr.id);
+  }
+  await deleteRecord('students', studentId);
 }
