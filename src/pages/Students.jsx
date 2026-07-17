@@ -215,6 +215,16 @@ export default function Students() {
     return matchSearch && matchClass;
   });
 
+  // ── DUPLICATE NAME DETECTION ────────────────────────────────────
+  const duplicateStudentGroups = (() => {
+    const groups = {};
+    students.filter(s => s.status !== 'withdrawn').forEach(s => {
+      const key = `${s.firstName.trim().toLowerCase()} ${s.lastName.trim().toLowerCase()}`;
+      (groups[key] = groups[key] || []).push(s);
+    });
+    return Object.values(groups).filter(g => g.length > 1);
+  })();
+
   // ── QUICK ADD ─────────────────────────────────────────────────
   async function handleQuickAdd(e) {
     e.preventDefault();
@@ -333,6 +343,37 @@ export default function Students() {
       {error && (
         <div className="alert alert-danger" style={{ marginBottom: 10 }}>
           {error} <button onClick={() => setError('')} style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
+
+      {isAdmin && duplicateStudentGroups.length > 0 && (
+        <div className="card" style={{ marginBottom: 10, border: '1.5px solid #e65100', background: '#fff8f0' }}>
+          <div style={{ fontWeight: 700, fontSize: '.82rem', color: '#e65100', marginBottom: 8 }}>
+            ⚠ Possible Duplicate Students Found
+          </div>
+          {duplicateStudentGroups.map((group, gi) => (
+            <div key={gi} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #ffe0b2' }}>
+              <div style={{ fontSize: '.8rem', fontWeight: 600, marginBottom: 4 }}>
+                {group[0].firstName} {group[0].lastName} — {group.length} entries
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {group.map(s => (
+                  <div key={s.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px',
+                    border: '1px solid var(--border)', borderRadius: 6, background: '#fff', fontSize: '.72rem',
+                  }}>
+                    <span>{s.studentCode} — {enrollMap[s.id] ? classMap[enrollMap[s.id].classId]?.name : 'Not enrolled'}</span>
+                    <button className="btn btn-danger btn-sm" style={{ fontSize: '.68rem', padding: '1px 6px' }} onClick={() => handleRemove(s)}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
+            Removing withdraws the student and preserves their historical scores/results.
+          </div>
         </div>
       )}
 
