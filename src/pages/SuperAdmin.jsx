@@ -26,10 +26,13 @@ import {
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
-import { createStudent, enrollStudent } from '../services/studentService';
+import { createStudent, enrollStudent, updateStudent, updateEnrollmentStatus } from '../services/studentService';
 import { createTeacherAccount } from '../services/teacherAuthService';
 import { writeRecord } from '../services/syncService';
 import { v4 as uuidv4 } from 'uuid';
+import * as XLSX from 'xlsx';
+import { db } from '../services/firebase';
+import { collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 
 // ── HELPERS ───────────────────────────────────────────────────────
 
@@ -1078,6 +1081,202 @@ function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
   );
 }
 
+// ── SUPER ADMIN — EDIT STUDENT (name / gender / status / class) ────
+function SuperAdminStudentEditModal({ student, classes, currentClassId, onClose, onSave }) {
+  const [form, setForm] = useState({
+    firstName: student.firstName || '',
+    lastName:  student.lastName  || '',
+    gender:    student.gender    || 'Male',
+    status:    student.status    || 'active',
+    classId:   currentClassId    || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+  const up = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try { await onSave(form); onClose(); }
+    catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal-header">
+          <span className="modal-title">Super Admin — Edit Student</span>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body">
+            {error && <div className="alert alert-danger" style={{ marginBottom: 10 }}>{error}</div>}
+            <div className="form-grid">
+              <div className="form-group">
+                <label>First Name *</label>
+                <input required value={form.firstName} onChange={e => up('firstName', e.target.value)} autoFocus />
+              </div>
+              <div className="form-group">
+                <label>Last Name *</label>
+                <input required value={form.lastName} onChange={e => up('lastName', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Gender</label>
+                <select value={form.gender} onChange={e => up('gender', e.target.value)}>
+                  <option>Male</option><option>Female</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Status</label>
+                <select value={form.status} onChange={e => up('status', e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="graduated">Graduated</option>
+                  <option value="withdrawn">Withdrawn</option>
+                </select>
+              </div>
+              <div className="form-group full">
+                <label>Class</label>
+                <select value={form.classId} onChange={e => up('classId', e.target.value)}>
+                  <option value="">— Not enrolled —</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── SUPER ADMIN — EDIT TEACHER (name / class / subject) ────────────
+function SuperAdminTeacherEditModal({ teacher, classes, subjects, onClose, onSave }) {
+  const [form, setForm] = useState({
+    firstName:        teacher.firstName || '',
+    lastName:         teacher.lastName  || '',
+    assignedClasses:  teacher.assignedClasses  || [],
+    assignedSubjects: teacher.assignedSubjects || [],
+  });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+  const up = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function togglePill(field, id) {
+    setForm(f => ({
+      ...f,
+      [field]: f[field].includes(id) ? f[field].filter(x => x !== id) : [...f[field], id],
+    }));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try { await onSave(form); onClose(); }
+    catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <span className="modal-title">Super Admin — Edit Teacher</span>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body">
+            {error && <div className="alert alert-danger" style={{ marginBottom: 10 }}>{error}</div>}
+            <div className="form-grid">
+              <div className="form-group">
+                <label>First Name *</label>
+                <input required value={form.firstName} onChange={e => up('firstName', e.target.value)} autoFocus />
+              </div>
+              <div className="form-group">
+                <label>Last Name *</label>
+                <input required value={form.lastName} onChange={e => up('lastName', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Email</label>
+                <input value={teacher.email || ''} disabled />
+              </div>
+            </div>
+
+            <div style={{ margin: '14px 0 6px', fontWeight: 700, color: 'var(--navy)', fontSize: '.88rem' }}>
+              Assigned Classes
+            </div>
+            {classes.length === 0
+              ? <p style={{ fontSize: '.8rem', color: 'var(--text-lt)' }}>No classes yet in this school.</p>
+              : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  {classes.map(c => {
+                    const on = form.assignedClasses.includes(c.id);
+                    return (
+                      <button
+                        key={c.id} type="button" onClick={() => togglePill('assignedClasses', c.id)}
+                        style={{
+                          padding: '5px 12px', borderRadius: 20, fontSize: '.8rem',
+                          border: `1.5px solid ${on ? 'var(--navy)' : 'var(--border)'}`,
+                          background: on ? 'var(--navy)' : '#fff',
+                          color: on ? '#fff' : 'var(--text-mid)',
+                          cursor: 'pointer', fontWeight: on ? 700 : 400,
+                        }}
+                      >
+                        {on ? '✓ ' : ''}{c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            }
+
+            <div style={{ fontWeight: 700, color: 'var(--navy)', fontSize: '.88rem', margin: '10px 0 6px' }}>
+              Assigned Subjects
+            </div>
+            {subjects.length === 0
+              ? <p style={{ fontSize: '.8rem', color: 'var(--text-lt)' }}>No subjects yet in this school.</p>
+              : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {subjects.map(s => {
+                    const on = form.assignedSubjects.includes(s.id);
+                    return (
+                      <button
+                        key={s.id} type="button" onClick={() => togglePill('assignedSubjects', s.id)}
+                        style={{
+                          padding: '5px 12px', borderRadius: 20, fontSize: '.8rem',
+                          border: `1.5px solid ${on ? '#2980b9' : 'var(--border)'}`,
+                          background: on ? '#2980b9' : '#fff',
+                          color: on ? '#fff' : 'var(--text-mid)',
+                          cursor: 'pointer', fontWeight: on ? 700 : 400,
+                        }}
+                      >
+                        {on ? '✓ ' : ''}{s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            }
+          </div>
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── SCHOOL DATA BROWSER ──────────────────────────────────────────
 // Gives super admin complete visibility and control over every school's
 // operational data. Select a school → see all students, teachers,
@@ -1117,6 +1316,11 @@ function SchoolDataBrowser({ schools }) {
   const [tAdding,   setTAdding]   = useState(false);
   const [tError,    setTError]    = useState('');
 
+  // ── EDIT (super admin, on behalf of school) ───────────────────────
+  const [editStudent, setEditStudent] = useState(null);
+  const [editTeacher, setEditTeacher] = useState(null);
+  const [exporting,   setExporting]   = useState(false);
+
   async function loadSchoolData(schoolId) {
     if (!schoolId) { setData(null); return; }
     setLoadingData(true); setDataError(''); setData(null);
@@ -1140,6 +1344,147 @@ function SchoolDataBrowser({ schools }) {
       await loadSchoolData(selectedSchoolId); // refresh
     } catch (err) {
       alert('Delete failed: ' + err.message);
+    }
+  }
+
+  // ── EDIT STUDENT (super admin, on behalf of school) ───────────────
+  async function handleUpdateStudent(form) {
+    const student = editStudent;
+    await updateStudent(selectedSchoolId, student.id, {
+      firstName: form.firstName.trim(),
+      lastName:  form.lastName.trim(),
+      gender:    form.gender,
+      status:    form.status,
+    });
+
+    // Reconcile class assignment against the student's current active enrollment
+    const currentEnrollment = (data?.enrollments || []).find(
+      e => e.studentId === student.id && e.status === 'active'
+    );
+    const currentClassId = currentEnrollment?.classId || '';
+    if (form.classId !== currentClassId) {
+      if (currentEnrollment) {
+        await updateEnrollmentStatus(selectedSchoolId, currentEnrollment.id, 'withdrawn');
+      }
+      if (form.classId) {
+        await enrollStudent(
+          selectedSchoolId, student.id, form.classId,
+          selectedSchool?.academicYear || '', selectedSchool?.currentTerm || '1',
+        );
+      }
+    }
+
+    logActivity(selectedSchoolId, '', 'super-admin', 'student_edited_by_superadmin', {
+      studentName: `${form.firstName.trim()} ${form.lastName.trim()}`,
+    });
+    await loadSchoolData(selectedSchoolId);
+  }
+
+  // ── EDIT TEACHER (super admin, on behalf of school) ────────────────
+  async function handleUpdateTeacher(form) {
+    const teacher = editTeacher;
+    await superAdminUpdateDoc('teachers', teacher.id, {
+      firstName:        form.firstName.trim(),
+      lastName:         form.lastName.trim(),
+      assignedClasses:  form.assignedClasses,
+      assignedSubjects: form.assignedSubjects,
+    });
+
+    // Keep the linked login profile (users collection) in sync
+    try {
+      const q    = query(collection(db, 'users'), where('teacherId', '==', teacher.id));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        await updateDoc(snap.docs[0].ref, {
+          firstName:        form.firstName.trim(),
+          lastName:         form.lastName.trim(),
+          assignedClasses:  form.assignedClasses,
+          assignedSubjects: form.assignedSubjects,
+          updatedAt:        Date.now(),
+        });
+      }
+    } catch (err) {
+      console.warn('Could not sync teacher login profile:', err.message);
+    }
+
+    logActivity(selectedSchoolId, '', 'super-admin', 'teacher_edited_by_superadmin', {
+      teacherName: `${form.firstName.trim()} ${form.lastName.trim()}`,
+    });
+    await loadSchoolData(selectedSchoolId);
+  }
+
+  // ── EXPORT SCHOOL DATA (super admin, on behalf of school) ──────────
+  function handleExportSchoolData() {
+    if (!data || !selectedSchoolId) return;
+    setExporting(true);
+    try {
+      const studentMap = Object.fromEntries((data.students || []).map(s => [s.id, s]));
+      const classMap   = Object.fromEntries((data.classes  || []).map(c => [c.id, c]));
+      const subjectMap = Object.fromEntries((data.subjects || []).map(s => [s.id, s]));
+      const studentName = id => studentMap[id] ? `${studentMap[id].firstName} ${studentMap[id].lastName}` : id;
+      const className    = id => classMap[id]?.name   || id;
+      const subjectName  = id => subjectMap[id]?.name || id;
+
+      const wb = XLSX.utils.book_new();
+
+      const studentsRows = (data.students || []).map(s => ({
+        'Student Code': s.studentCode, 'First Name': s.firstName, 'Last Name': s.lastName,
+        Gender: s.gender, 'Date of Birth': s.dateOfBirth || '', 'Guardian Name': s.guardianName || '',
+        'Guardian Phone': s.guardianPhone || '', Address: s.address || '', Status: s.status,
+      }));
+      if (studentsRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(studentsRows), 'Students');
+
+      const teachersRows = (data.teachers || []).map(t => ({
+        'First Name': t.firstName, 'Last Name': t.lastName, Email: t.email, Phone: t.phone || '',
+        'Staff ID': t.staffId || '', Classes: (t.assignedClasses || []).map(className).join(', '),
+        Subjects: (t.assignedSubjects || []).map(subjectName).join(', '), Status: t.status || 'active',
+      }));
+      if (teachersRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teachersRows), 'Teachers');
+
+      const classesRows = (data.classes || []).map(c => ({
+        Name: c.name, Level: c.level || '', Capacity: c.capacity || '',
+      }));
+      if (classesRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(classesRows), 'Classes');
+
+      const subjectsRows = (data.subjects || []).map(s => ({
+        Name: s.name, Code: s.code || '', 'Max Class Score': s.maxClassScore ?? 30, 'Max Exam Score': s.maxExamScore ?? 70,
+      }));
+      if (subjectsRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subjectsRows), 'Subjects');
+
+      const enrollmentsRows = (data.enrollments || []).map(e => ({
+        Student: studentName(e.studentId), Class: className(e.classId),
+        'Academic Year': e.academicYear, Term: e.term, Status: e.status,
+      }));
+      if (enrollmentsRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(enrollmentsRows), 'Enrollments');
+
+      const scoresRows = (data.scores || []).map(s => ({
+        Student: studentName(s.studentId), Subject: subjectName(s.subjectId),
+        'Class Score': s.classScore, 'Exam Score': s.examScore, Total: s.total,
+        'Academic Year': s.academicYear, Term: s.term,
+      }));
+      if (scoresRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scoresRows), 'Scores');
+
+      const resultsRows = (data.results || []).map(r => ({
+        Student: studentName(r.studentId), Class: className(r.classId),
+        Position: r.position, Average: r.average, 'Academic Year': r.academicYear,
+        Status: r.isFinalized ? 'Final' : 'Draft',
+      }));
+      if (resultsRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resultsRows), 'Results');
+
+      if (wb.SheetNames.length === 0) {
+        alert('This school has no data yet to export.');
+        return;
+      }
+      const safeName = (selectedSchool?.name || 'school').replace(/[^a-z0-9]+/gi, '_');
+      XLSX.writeFile(wb, `${safeName}_export_${Date.now()}.xlsx`);
+
+      logActivity(selectedSchoolId, '', 'super-admin', 'school_data_exported_by_superadmin', {
+        schoolName: selectedSchool?.name || '',
+      });
+    } catch (err) {
+      alert('Export failed: ' + err.message);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -1255,7 +1600,9 @@ function SchoolDataBrowser({ schools }) {
 
   // Student → current class lookup (via active enrollment), so super admin
   // can see which class each enrolled student belongs to.
-  const classById = Object.fromEntries((data?.classes || []).map(c => [c.id, c]));
+  const classById   = Object.fromEntries((data?.classes  || []).map(c => [c.id, c]));
+  const studentById = Object.fromEntries((data?.students || []).map(s => [s.id, s]));
+  const subjectById = Object.fromEntries((data?.subjects || []).map(s => [s.id, s]));
   const classByStudentId = {};
   (data?.enrollments || []).forEach(e => {
     if (e.status !== 'active') return;
@@ -1268,6 +1615,23 @@ function SchoolDataBrowser({ schools }) {
     const enr = classByStudentId[studentId];
     return enr ? (classById[enr.classId]?.name || '—') : null;
   }
+  function studentDisplayName(studentId) {
+    const s = studentById[studentId];
+    return s ? `${s.firstName} ${s.lastName}` : (studentId ? studentId.substring(0, 8) + '…' : '—');
+  }
+
+  // ── DUPLICATE NAME DETECTION (students & teachers) ─────────────────
+  function findDuplicateGroups(records) {
+    const groups = {};
+    records.forEach(r => {
+      const key = `${(r.firstName || '').trim().toLowerCase()} ${(r.lastName || '').trim().toLowerCase()}`.trim();
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(r);
+    });
+    return Object.values(groups).filter(g => g.length > 1);
+  }
+  const duplicateStudentGroups = dataTab === 'students' ? findDuplicateGroups(data?.students || []) : [];
+  const duplicateTeacherGroups = dataTab === 'teachers' ? findDuplicateGroups(data?.teachers || []) : [];
 
   // Render a row's key fields for each collection type
   function renderRow(r) {
@@ -1283,13 +1647,13 @@ function SchoolDataBrowser({ schools }) {
       case 'subjects':
         return [r.name, r.code, `${r.maxClassScore || 30}/${r.maxExamScore || 70}`];
       case 'enrollments':
-        return [r.studentId?.substring(0, 8) + '…', r.classId?.substring(0, 8) + '…',
+        return [studentDisplayName(r.studentId), classById[r.classId]?.name || r.classId?.substring(0, 8) + '…',
           r.academicYear, `Term ${r.term}`, r.status];
       case 'scores':
-        return [r.studentId?.substring(0, 8) + '…', r.subjectId?.substring(0, 8) + '…',
+        return [studentDisplayName(r.studentId), subjectById[r.subjectId]?.name || r.subjectId?.substring(0, 8) + '…',
           r.classScore, r.examScore, r.total, r.academicYear, `T${r.term}`];
       case 'results':
-        return [r.studentId?.substring(0, 8) + '…', r.classId?.substring(0, 8) + '…',
+        return [studentDisplayName(r.studentId), classById[r.classId]?.name || r.classId?.substring(0, 8) + '…',
           r.position, r.average + '%', r.academicYear, r.isFinalized ? '✓ Final' : 'Draft'];
       default:
         return [r.id];
@@ -1337,6 +1701,16 @@ function SchoolDataBrowser({ schools }) {
               className="btn btn-ghost btn-sm"
             >
               ↻ Refresh
+            </button>
+          )}
+          {selectedSchoolId && data && (
+            <button
+              onClick={handleExportSchoolData}
+              className="btn btn-ghost btn-sm"
+              disabled={exporting}
+              title="Export all of this school's data to an Excel workbook"
+            >
+              {exporting ? '…' : '⬇ Export Data (Excel)'}
             </button>
           )}
           {selectedSchool && (
@@ -1481,6 +1855,42 @@ function SchoolDataBrowser({ schools }) {
             </div>
           )}
 
+          {/* Duplicate name detection */}
+          {(duplicateStudentGroups.length > 0 || duplicateTeacherGroups.length > 0) && (
+            <div className="card" style={{ marginBottom: 10, border: '1.5px solid #e65100', background: '#fff8f0' }}>
+              <div style={{ fontWeight: 700, fontSize: '.82rem', color: '#e65100', marginBottom: 8 }}>
+                ⚠ Possible Duplicate {dataTab === 'students' ? 'Students' : 'Teachers'} Found
+              </div>
+              {(dataTab === 'students' ? duplicateStudentGroups : duplicateTeacherGroups).map((group, gi) => (
+                <div key={gi} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #ffe0b2' }}>
+                  <div style={{ fontSize: '.8rem', fontWeight: 600, marginBottom: 4 }}>
+                    {group[0].firstName} {group[0].lastName} — {group.length} entries
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {group.map(r => (
+                      <div key={r.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px',
+                        border: '1px solid var(--border)', borderRadius: 6, background: '#fff', fontSize: '.72rem',
+                      }}>
+                        <span>{dataTab === 'students' ? (r.studentCode || r.id.substring(0, 8)) : r.email}</span>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          style={{ fontSize: '.68rem', padding: '1px 6px' }}
+                          onClick={() => handleDeleteRecord(dataTab, r.id, rowLabel(r))}
+                        >
+                          🗑 Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
+                Review carefully before removing — this permanently deletes the record.
+              </div>
+            </div>
+          )}
+
           {/* Search */}
           <div className="card">
             <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
@@ -1533,13 +1943,33 @@ function SchoolDataBrowser({ schools }) {
                           <td key={i} style={{ fontSize: '.8rem' }}>{cell ?? '—'}</td>
                         ))}
                         <td>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            style={{ fontSize: '.7rem', padding: '2px 8px' }}
-                            onClick={() => handleDeleteRecord(dataTab, r.id, rowLabel(r))}
-                          >
-                            🗑
-                          </button>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {dataTab === 'students' && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: '.7rem', padding: '2px 8px' }}
+                                onClick={() => setEditStudent(r)}
+                              >
+                                ✎ Edit
+                              </button>
+                            )}
+                            {dataTab === 'teachers' && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: '.7rem', padding: '2px 8px' }}
+                                onClick={() => setEditTeacher(r)}
+                              >
+                                ✎ Edit
+                              </button>
+                            )}
+                            <button
+                              className="btn btn-danger btn-sm"
+                              style={{ fontSize: '.7rem', padding: '2px 8px' }}
+                              onClick={() => handleDeleteRecord(dataTab, r.id, rowLabel(r))}
+                            >
+                              🗑
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1549,6 +1979,25 @@ function SchoolDataBrowser({ schools }) {
             )}
           </div>
         </>
+      )}
+
+      {editStudent && (
+        <SuperAdminStudentEditModal
+          student={editStudent}
+          classes={data?.classes || []}
+          currentClassId={classByStudentId[editStudent.id]?.classId || ''}
+          onClose={() => setEditStudent(null)}
+          onSave={handleUpdateStudent}
+        />
+      )}
+      {editTeacher && (
+        <SuperAdminTeacherEditModal
+          teacher={editTeacher}
+          classes={data?.classes || []}
+          subjects={data?.subjects || []}
+          onClose={() => setEditTeacher(null)}
+          onSave={handleUpdateTeacher}
+        />
       )}
     </div>
   );
@@ -1778,357 +2227,4 @@ export default function SuperAdmin() {
           </button>
           <button className={`tab${tab === 'alerts' ? ' active' : ''}`} onClick={() => setTab('alerts')}>
             Alerts {expiringSchools.length > 0 && (
-              <span className="badge badge-warning" style={{ marginLeft: 6 }}>{expiringSchools.length}</span>
-            )}
-          </button>
-          <button
-            className={`tab${tab === 'trials' ? ' active' : ''}`}
-            onClick={() => setTab('trials')}
-            style={{ background: tab === 'trials' ? '#ff9800' : '', color: tab === 'trials' ? '#fff' : '' }}
-          >
-            🎁 Trial Requests
-            {pendingTrials.length > 0 && (
-              <span className="badge badge-danger" style={{ marginLeft: 6 }}>{pendingTrials.length}</span>
-            )}
-          </button>
-          <button
-            className={`tab${tab === 'email' ? ' active' : ''}`}
-            onClick={() => setTab('email')}
-          >
-            ✉️ Send Email
-          </button>
-          <button
-            className={`tab${tab === 'activity' ? ' active' : ''}`}
-            onClick={() => setTab('activity')}
-          >
-            📋 Activity Log
-          </button>
-          <button
-            className={`tab${tab === 'data' ? ' active' : ''}`}
-            onClick={() => setTab('data')}
-            style={{ background: tab === 'data' ? '#e94560' : '', color: tab === 'data' ? '#fff' : '', fontWeight: 700 }}
-          >
-            🗄 School Data
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="spinner-center"><div className="spinner" /></div>
-        ) : (
-          <>
-            {/* ── SCHOOLS TAB ── */}
-            {tab === 'schools' && (
-              <div className="card">
-                <div className="card-header">
-                  <span className="card-title">All Schools</span>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <TrialExpiryButton schools={schools} />
-                    <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
-                      + Generate Code
-                    </button>
-                  </div>
-                </div>
-                <div className="filter-bar">
-                  <input
-                    placeholder="Search school or email…"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    style={{ maxWidth: 300 }}
-                  />
-                </div>
-                {filteredSchools.length === 0 ? (
-                  <div className="empty-state"><div className="icon">🏫</div><p>No schools yet.</p></div>
-                ) : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr><th>School</th><th>Plan</th><th>Status</th><th>Days Left</th><th>Last Login</th><th>Backup</th><th>Monthly</th><th>Actions</th></tr>
-                      </thead>
-                      <tbody>
-                        {filteredSchools.map(s => {
-                          const sub     = s.subscription;
-                          const status  = getSubscriptionStatus(sub);
-                          const days    = daysRemaining(sub);
-                          const monthly = sub ? (PLANS[sub.plan]?.price || 0) + (sub.backupAddon && sub.plan !== 'premium' ? 100 : 0) : 0;
-                          const loginTs = s.lastLoginAt;
-                          const loginAge = loginTs ? Math.floor((Date.now() - loginTs) / 86400000) : null;
-                          const loginLabel = loginTs == null ? '—'
-                            : loginAge === 0   ? 'Today'
-                            : loginAge === 1   ? 'Yesterday'
-                            : loginAge < 7     ? `${loginAge}d ago`
-                            : new Date(loginTs).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: '2-digit' });
-                          const loginFull = loginTs ? new Date(loginTs).toLocaleString('en-GH', { dateStyle: 'medium', timeStyle: 'short', hour12: true }) : null;
-                          return (
-                            <tr key={s.id} style={{
-                              background:
-                                status === 'expiring' ? '#fffde7' :
-                                status === 'grace' || status === 'expired' ? '#fce4ec' : '',
-                            }}>
-                              <td>
-                                <div style={{ fontWeight: 700 }}>{s.name}</div>
-                                <div style={{ fontSize: '.75rem', color: 'var(--text-lt)' }}>{sub?.adminEmail || '—'}</div>
-                              </td>
-                              <td>{sub ? <PlanBadge plan={sub.plan} /> : <span className="badge badge-neutral">None</span>}</td>
-                              <td><StatusBadge status={status} /></td>
-                              <td style={{ fontWeight: days < 7 ? 700 : 400, color: days < 7 ? 'var(--danger)' : 'inherit' }}>
-                                {sub ? `${days}d` : '—'}
-                              </td>
-                              <td title={loginFull || ''} style={{
-                                fontSize: '.78rem',
-                                color: loginAge == null ? '#bbb'
-                                  : loginAge === 0 ? '#2e7d32'
-                                  : loginAge <= 3  ? '#1b5e20'
-                                  : loginAge <= 14 ? '#e65100'
-                                  : '#999',
-                                fontWeight: loginAge != null && loginAge <= 1 ? 700 : 400,
-                                cursor: loginFull ? 'help' : 'default',
-                              }}>
-                                {loginLabel}
-                              </td>
-                              <td>{sub?.backupAddon ? <span className="badge badge-success">✓ Yes</span> : <span className="badge badge-neutral">No</span>}</td>
-                              <td style={{ fontWeight: 700 }}>GHS {monthly || '—'}</td>
-                              <td>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                  <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('detail'); }}>View</button>
-                                  <button className="btn btn-success btn-sm" onClick={() => { setSelected(s); setModal('renew'); }}>Renew</button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── REQUESTS TAB ── */}
-            {tab === 'requests' && (
-              <div className="card">
-                <div className="card-header">
-                  <span className="card-title">Access Requests</span>
-                  <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
-                    + Generate Code
-                  </button>
-                </div>
-                {requests.length === 0 ? (
-                  <div className="empty-state"><div className="icon">📬</div><p>No requests yet.</p></div>
-                ) : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Date</th><th>School</th><th>Admin</th><th>Phone</th>
-                          <th>Email</th><th>Type</th><th>Region</th><th>Plan</th>
-                          <th>Students</th><th>Status</th><th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {requests.map(r => (
-                          <tr key={r.id}>
-                            <td style={{ fontSize: '.78rem', whiteSpace: 'nowrap' }}>
-                              {new Date(r.submittedAt).toLocaleDateString()}
-                            </td>
-                            <td style={{ fontWeight: 700 }}>{r.schoolName}</td>
-                            <td>{r.adminName}</td>
-                            <td className="td-mono">{r.phone}</td>
-                            <td style={{ fontSize: '.78rem' }}>{r.email || '—'}</td>
-                            <td style={{ fontSize: '.78rem' }}>{r.schoolType || '—'}</td>
-                            <td style={{ fontSize: '.78rem' }}>{r.region || '—'}</td>
-                            <td><PlanBadge plan={r.plan} /></td>
-                            <td>{r.studentCount || '—'}</td>
-                            <td>
-                              <span className={`badge ${
-                                r.status === 'pending'  ? 'badge-warning' :
-                                r.status === 'approved' ? 'badge-success' :
-                                'badge-neutral'
-                              }`}>
-                                {r.status}
-                              </span>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                <a
-                                  href={`https://wa.me/233${r.phone?.replace(/^0/, '')}`}
-                                  target="_blank" rel="noreferrer"
-                                  className="btn btn-success btn-sm"
-                                >
-                                  📱 WhatsApp
-                                </a>
-                                {r.status === 'pending' && (
-                                  <>
-                                    <button
-                                      className="btn btn-primary btn-sm"
-                                      onClick={() => handleApproveRequest(r)}
-                                    >
-                                      Approve
-                                    </button>
-                                    <button
-                                      className="btn btn-danger btn-sm"
-                                      onClick={() => handleRejectRequest(r)}
-                                    >
-                                      🗑 Reject & Delete
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── CODES TAB ── */}
-            {tab === 'codes' && (
-              <div className="card">
-                <div className="card-header">
-                  <span className="card-title">Registration Codes</span>
-                  <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
-                    + Generate Code
-                  </button>
-                </div>
-                {codes.length === 0 ? (
-                  <div className="empty-state"><div className="icon">🔑</div><p>No codes generated yet.</p></div>
-                ) : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr><th>Code</th><th>School</th><th>Plan</th><th>Created</th><th>Expires</th><th>Status</th></tr>
-                      </thead>
-                      <tbody>
-                        {codes.map(c => (
-                          <tr key={c.id}>
-                            <td className="td-mono" style={{ fontWeight: 700, letterSpacing: '.08em' }}>{c.code}</td>
-                            <td>{c.schoolName}</td>
-                            <td><PlanBadge plan={c.plan} /></td>
-                            <td style={{ fontSize: '.78rem' }}>{new Date(c.createdAt).toLocaleDateString()}</td>
-                            <td style={{ fontSize: '.78rem', color: Date.now() > c.expiresAt ? 'var(--danger)' : 'inherit' }}>
-                              {new Date(c.expiresAt).toLocaleDateString()}
-                            </td>
-                            <td>
-                              <span className={`badge ${
-                                c.status === 'active' ? 'badge-success' :
-                                c.status === 'used'   ? 'badge-neutral' :
-                                'badge-danger'
-                              }`}>
-                                {c.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── ALERTS TAB ── */}
-            {tab === 'alerts' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {expiringSchools.length === 0 && schools.filter(s => getSubscriptionStatus(s.subscription) === 'grace').length === 0 ? (
-                  <div className="card">
-                    <div className="empty-state">
-                      <div className="icon">✅</div>
-                      <p>No alerts. All schools are in good standing.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {expiringSchools.map(s => (
-                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                          <span style={{ fontSize: '1.5rem' }}>⏰</span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700 }}>{s.name}</div>
-                            <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>
-                              Expires in <strong>{daysRemaining(s.subscription)} days</strong> · {s.subscription?.adminEmail}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <a
-                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
-                              target="_blank" rel="noreferrer"
-                              className="btn btn-success btn-sm"
-                            >
-                              📱 Remind
-                            </a>
-                            <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-primary btn-sm">
-                              Renew
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {schools.filter(s => getSubscriptionStatus(s.subscription) === 'grace').map(s => (
-                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--danger)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                          <span style={{ fontSize: '1.5rem' }}>🔒</span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700 }}>{s.name}</div>
-                            <div style={{ fontSize: '.8rem', color: 'var(--danger)' }}>
-                              In grace period — system locked for school admin
-                            </div>
-                          </div>
-                          <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-danger btn-sm">
-                            Renew Now
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ── PENDING TRIAL REQUESTS ── */}
-        {tab === 'trials' && (
-          <PendingTrialsPanel
-            pendingTrials={pendingTrials}
-            userProfile={userProfile}
-            onRefresh={load}
-          />
-        )}
-
-        {/* ── PENDING DELETIONS ── */}
-        {tab === 'deletions' && (
-          <PendingDeletionsPanel userProfile={userProfile} onRefresh={load} />
-        )}
-
-        {/* ── EMAIL COMPOSER ── */}
-        {tab === 'email' && (
-          <EmailComposerPanel schools={schools} userProfile={userProfile} />
-        )}
-
-        {/* ── ACTIVITY LOG ── */}
-        {tab === 'activity' && (
-          <ActivityLogPanel schools={schools} />
-        )}
-
-        {/* ── SCHOOL DATA BROWSER ── */}
-        {tab === 'data' && (
-          <SchoolDataBrowser schools={schools} />
-        )}
-      </div>
-
-      {/* Modals */}
-      {modal === 'generate' && (
-        <GenerateCodeModal
-          prefilledSchool={generatePrefill.schoolName}
-          prefilledPlan={generatePrefill.plan}
-          onClose={() => { setModal(null); load(); }}
-          onGenerated={load}
-        />
-      )}
-      {modal === 'renew'  && selected && <RenewModal       school={selected} onClose={() => setModal(null)} onRenewed={load} />}
-      {modal === 'detail' && selected && <SchoolDetailModal school={selected} onClose={() => setModal(null)} onRefresh={load} />}
-    </div>
-  );
-}
+              <span className="badge badge-warning" style
