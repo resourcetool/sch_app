@@ -2227,4 +2227,357 @@ export default function SuperAdmin() {
           </button>
           <button className={`tab${tab === 'alerts' ? ' active' : ''}`} onClick={() => setTab('alerts')}>
             Alerts {expiringSchools.length > 0 && (
-              <span className="badge badge-warning" style
+              <span className="badge badge-warning" style={{ marginLeft: 6 }}>{expiringSchools.length}</span>
+            )}
+          </button>
+          <button
+            className={`tab${tab === 'trials' ? ' active' : ''}`}
+            onClick={() => setTab('trials')}
+            style={{ background: tab === 'trials' ? '#ff9800' : '', color: tab === 'trials' ? '#fff' : '' }}
+          >
+            🎁 Trial Requests
+            {pendingTrials.length > 0 && (
+              <span className="badge badge-danger" style={{ marginLeft: 6 }}>{pendingTrials.length}</span>
+            )}
+          </button>
+          <button
+            className={`tab${tab === 'email' ? ' active' : ''}`}
+            onClick={() => setTab('email')}
+          >
+            ✉️ Send Email
+          </button>
+          <button
+            className={`tab${tab === 'activity' ? ' active' : ''}`}
+            onClick={() => setTab('activity')}
+          >
+            📋 Activity Log
+          </button>
+          <button
+            className={`tab${tab === 'data' ? ' active' : ''}`}
+            onClick={() => setTab('data')}
+            style={{ background: tab === 'data' ? '#e94560' : '', color: tab === 'data' ? '#fff' : '', fontWeight: 700 }}
+          >
+            🗄 School Data
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="spinner-center"><div className="spinner" /></div>
+        ) : (
+          <>
+            {/* ── SCHOOLS TAB ── */}
+            {tab === 'schools' && (
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title">All Schools</span>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <TrialExpiryButton schools={schools} />
+                    <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
+                      + Generate Code
+                    </button>
+                  </div>
+                </div>
+                <div className="filter-bar">
+                  <input
+                    placeholder="Search school or email…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    style={{ maxWidth: 300 }}
+                  />
+                </div>
+                {filteredSchools.length === 0 ? (
+                  <div className="empty-state"><div className="icon">🏫</div><p>No schools yet.</p></div>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr><th>School</th><th>Plan</th><th>Status</th><th>Days Left</th><th>Last Login</th><th>Backup</th><th>Monthly</th><th>Actions</th></tr>
+                      </thead>
+                      <tbody>
+                        {filteredSchools.map(s => {
+                          const sub     = s.subscription;
+                          const status  = getSubscriptionStatus(sub);
+                          const days    = daysRemaining(sub);
+                          const monthly = sub ? (PLANS[sub.plan]?.price || 0) + (sub.backupAddon && sub.plan !== 'premium' ? 100 : 0) : 0;
+                          const loginTs = s.lastLoginAt;
+                          const loginAge = loginTs ? Math.floor((Date.now() - loginTs) / 86400000) : null;
+                          const loginLabel = loginTs == null ? '—'
+                            : loginAge === 0   ? 'Today'
+                            : loginAge === 1   ? 'Yesterday'
+                            : loginAge < 7     ? `${loginAge}d ago`
+                            : new Date(loginTs).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: '2-digit' });
+                          const loginFull = loginTs ? new Date(loginTs).toLocaleString('en-GH', { dateStyle: 'medium', timeStyle: 'short', hour12: true }) : null;
+                          return (
+                            <tr key={s.id} style={{
+                              background:
+                                status === 'expiring' ? '#fffde7' :
+                                status === 'grace' || status === 'expired' ? '#fce4ec' : '',
+                            }}>
+                              <td>
+                                <div style={{ fontWeight: 700 }}>{s.name}</div>
+                                <div style={{ fontSize: '.75rem', color: 'var(--text-lt)' }}>{sub?.adminEmail || '—'}</div>
+                              </td>
+                              <td>{sub ? <PlanBadge plan={sub.plan} /> : <span className="badge badge-neutral">None</span>}</td>
+                              <td><StatusBadge status={status} /></td>
+                              <td style={{ fontWeight: days < 7 ? 700 : 400, color: days < 7 ? 'var(--danger)' : 'inherit' }}>
+                                {sub ? `${days}d` : '—'}
+                              </td>
+                              <td title={loginFull || ''} style={{
+                                fontSize: '.78rem',
+                                color: loginAge == null ? '#bbb'
+                                  : loginAge === 0 ? '#2e7d32'
+                                  : loginAge <= 3  ? '#1b5e20'
+                                  : loginAge <= 14 ? '#e65100'
+                                  : '#999',
+                                fontWeight: loginAge != null && loginAge <= 1 ? 700 : 400,
+                                cursor: loginFull ? 'help' : 'default',
+                              }}>
+                                {loginLabel}
+                              </td>
+                              <td>{sub?.backupAddon ? <span className="badge badge-success">✓ Yes</span> : <span className="badge badge-neutral">No</span>}</td>
+                              <td style={{ fontWeight: 700 }}>GHS {monthly || '—'}</td>
+                              <td>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('detail'); }}>View</button>
+                                  <button className="btn btn-success btn-sm" onClick={() => { setSelected(s); setModal('renew'); }}>Renew</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── REQUESTS TAB ── */}
+            {tab === 'requests' && (
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title">Access Requests</span>
+                  <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
+                    + Generate Code
+                  </button>
+                </div>
+                {requests.length === 0 ? (
+                  <div className="empty-state"><div className="icon">📬</div><p>No requests yet.</p></div>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th><th>School</th><th>Admin</th><th>Phone</th>
+                          <th>Email</th><th>Type</th><th>Region</th><th>Plan</th>
+                          <th>Students</th><th>Status</th><th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {requests.map(r => (
+                          <tr key={r.id}>
+                            <td style={{ fontSize: '.78rem', whiteSpace: 'nowrap' }}>
+                              {new Date(r.submittedAt).toLocaleDateString()}
+                            </td>
+                            <td style={{ fontWeight: 700 }}>{r.schoolName}</td>
+                            <td>{r.adminName}</td>
+                            <td className="td-mono">{r.phone}</td>
+                            <td style={{ fontSize: '.78rem' }}>{r.email || '—'}</td>
+                            <td style={{ fontSize: '.78rem' }}>{r.schoolType || '—'}</td>
+                            <td style={{ fontSize: '.78rem' }}>{r.region || '—'}</td>
+                            <td><PlanBadge plan={r.plan} /></td>
+                            <td>{r.studentCount || '—'}</td>
+                            <td>
+                              <span className={`badge ${
+                                r.status === 'pending'  ? 'badge-warning' :
+                                r.status === 'approved' ? 'badge-success' :
+                                'badge-neutral'
+                              }`}>
+                                {r.status}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                <a
+                                  href={`https://wa.me/233${r.phone?.replace(/^0/, '')}`}
+                                  target="_blank" rel="noreferrer"
+                                  className="btn btn-success btn-sm"
+                                >
+                                  📱 WhatsApp
+                                </a>
+                                {r.status === 'pending' && (
+                                  <>
+                                    <button
+                                      className="btn btn-primary btn-sm"
+                                      onClick={() => handleApproveRequest(r)}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      className="btn btn-danger btn-sm"
+                                      onClick={() => handleRejectRequest(r)}
+                                    >
+                                      🗑 Reject & Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── CODES TAB ── */}
+            {tab === 'codes' && (
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title">Registration Codes</span>
+                  <button onClick={() => { setGeneratePrefill({ schoolName: '', plan: 'pro' }); setModal('generate'); }} className="btn btn-primary">
+                    + Generate Code
+                  </button>
+                </div>
+                {codes.length === 0 ? (
+                  <div className="empty-state"><div className="icon">🔑</div><p>No codes generated yet.</p></div>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr><th>Code</th><th>School</th><th>Plan</th><th>Created</th><th>Expires</th><th>Status</th></tr>
+                      </thead>
+                      <tbody>
+                        {codes.map(c => (
+                          <tr key={c.id}>
+                            <td className="td-mono" style={{ fontWeight: 700, letterSpacing: '.08em' }}>{c.code}</td>
+                            <td>{c.schoolName}</td>
+                            <td><PlanBadge plan={c.plan} /></td>
+                            <td style={{ fontSize: '.78rem' }}>{new Date(c.createdAt).toLocaleDateString()}</td>
+                            <td style={{ fontSize: '.78rem', color: Date.now() > c.expiresAt ? 'var(--danger)' : 'inherit' }}>
+                              {new Date(c.expiresAt).toLocaleDateString()}
+                            </td>
+                            <td>
+                              <span className={`badge ${
+                                c.status === 'active' ? 'badge-success' :
+                                c.status === 'used'   ? 'badge-neutral' :
+                                'badge-danger'
+                              }`}>
+                                {c.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── ALERTS TAB ── */}
+            {tab === 'alerts' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {expiringSchools.length === 0 && schools.filter(s => getSubscriptionStatus(s.subscription) === 'grace').length === 0 ? (
+                  <div className="card">
+                    <div className="empty-state">
+                      <div className="icon">✅</div>
+                      <p>No alerts. All schools are in good standing.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {expiringSchools.map(s => (
+                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <span style={{ fontSize: '1.5rem' }}>⏰</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700 }}>{s.name}</div>
+                            <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>
+                              Expires in <strong>{daysRemaining(s.subscription)} days</strong> · {s.subscription?.adminEmail}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <a
+                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
+                              target="_blank" rel="noreferrer"
+                              className="btn btn-success btn-sm"
+                            >
+                              📱 Remind
+                            </a>
+                            <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-primary btn-sm">
+                              Renew
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {schools.filter(s => getSubscriptionStatus(s.subscription) === 'grace').map(s => (
+                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--danger)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <span style={{ fontSize: '1.5rem' }}>🔒</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700 }}>{s.name}</div>
+                            <div style={{ fontSize: '.8rem', color: 'var(--danger)' }}>
+                              In grace period — system locked for school admin
+                            </div>
+                          </div>
+                          <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-danger btn-sm">
+                            Renew Now
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── PENDING TRIAL REQUESTS ── */}
+        {tab === 'trials' && (
+          <PendingTrialsPanel
+            pendingTrials={pendingTrials}
+            userProfile={userProfile}
+            onRefresh={load}
+          />
+        )}
+
+        {/* ── PENDING DELETIONS ── */}
+        {tab === 'deletions' && (
+          <PendingDeletionsPanel userProfile={userProfile} onRefresh={load} />
+        )}
+
+        {/* ── EMAIL COMPOSER ── */}
+        {tab === 'email' && (
+          <EmailComposerPanel schools={schools} userProfile={userProfile} />
+        )}
+
+        {/* ── ACTIVITY LOG ── */}
+        {tab === 'activity' && (
+          <ActivityLogPanel schools={schools} />
+        )}
+
+        {/* ── SCHOOL DATA BROWSER ── */}
+        {tab === 'data' && (
+          <SchoolDataBrowser schools={schools} />
+        )}
+      </div>
+
+      {/* Modals */}
+      {modal === 'generate' && (
+        <GenerateCodeModal
+          prefilledSchool={generatePrefill.schoolName}
+          prefilledPlan={generatePrefill.plan}
+          onClose={() => { setModal(null); load(); }}
+          onGenerated={load}
+        />
+      )}
+      {modal === 'renew'  && selected && <RenewModal       school={selected} onClose={() => setModal(null)} onRenewed={load} />}
+      {modal === 'detail' && selected && <SchoolDetailModal school={selected} onClose={() => setModal(null)} onRefresh={load} />}
+    </div>
+  );
+}
