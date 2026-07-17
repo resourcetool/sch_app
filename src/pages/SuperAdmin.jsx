@@ -22,10 +22,14 @@ import {
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
   sendSuperAdminEmail, broadcastEmailToAllSchools,
   getSchoolActivityLog, getPendingDeletions,
-  cancelDeletionRequest,
+  cancelDeletionRequest, logActivity,
 } from '../services/superAdminService';
 import { PLANS } from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
+import { createStudent, enrollStudent } from '../services/studentService';
+import { createTeacherAccount } from '../services/teacherAuthService';
+import { writeRecord } from '../services/syncService';
+import { v4 as uuidv4 } from 'uuid';
 
 // ── HELPERS ───────────────────────────────────────────────────────
 
@@ -1097,6 +1101,22 @@ function SchoolDataBrowser({ schools }) {
   const [dataError,        setDataError]         = useState('');
   const [search,           setSearch]            = useState('');
 
+  // ── QUICK-ADD STUDENT (on behalf of school) ──────────────────────
+  const [sFirst,  setSFirst]  = useState('');
+  const [sLast,   setSLast]   = useState('');
+  const [sGender, setSGender] = useState('Male');
+  const [sClass,  setSClass]  = useState('');
+  const [sAdding, setSAdding] = useState(false);
+  const [sError,  setSError]  = useState('');
+
+  // ── QUICK-ADD TEACHER (on behalf of school) ──────────────────────
+  const [tFirst,    setTFirst]    = useState('');
+  const [tLast,     setTLast]     = useState('');
+  const [tEmail,    setTEmail]    = useState('');
+  const [tPassword, setTPassword] = useState('');
+  const [tAdding,   setTAdding]   = useState(false);
+  const [tError,    setTError]    = useState('');
+
   async function loadSchoolData(schoolId) {
     if (!schoolId) { setData(null); return; }
     setLoadingData(true); setDataError(''); setData(null);
@@ -1158,6 +1178,74 @@ function SchoolDataBrowser({ schools }) {
   }
 
   const selectedSchool = schools.find(s => s.id === selectedSchoolId);
+
+  // ── ADD STUDENT (super admin, on behalf of the selected school) ──
+  async function handleAddStudent(e) {
+    e.preventDefault();
+    if (!sFirst.trim() || !sLast.trim() || !selectedSchoolId) return;
+    setSAdding(true); setSError('');
+    try {
+      const student = await createStudent(
+        selectedSchoolId,
+        { firstName: sFirst.trim(), lastName: sLast.trim(), gender: sGender, status: 'active' },
+        selectedSchool?.code || 'STU',
+        data?.students?.length || 0,
+      );
+      if (sClass) {
+        await enrollStudent(
+          selectedSchoolId, student.id, sClass,
+          selectedSchool?.academicYear || '', selectedSchool?.currentTerm || '1',
+        );
+      }
+      logActivity(selectedSchoolId, '', 'super-admin', 'student_created_by_superadmin', {
+        studentName: `${sFirst.trim()} ${sLast.trim()}`,
+        enrolledClass: sClass || null,
+      });
+      setSFirst(''); setSLast(''); setSGender('Male'); // keep class for next entry
+      await loadSchoolData(selectedSchoolId);
+    } catch (err) {
+      setSError(err.message);
+    } finally {
+      setSAdding(false);
+    }
+  }
+
+  // ── ADD TEACHER (super admin, on behalf of the selected school) ──
+  async function handleAddTeacher(e) {
+    e.preventDefault();
+    if (!tFirst.trim() || !tLast.trim() || !tEmail.trim() || !tPassword.trim() || !selectedSchoolId) return;
+    setTAdding(true); setTError('');
+    try {
+      const id = uuidv4();
+      await createTeacherAccount(tEmail.trim(), tPassword, {
+        schoolId:         selectedSchoolId,
+        firstName:        tFirst.trim(),
+        lastName:         tLast.trim(),
+        teacherId:        id,
+        assignedClasses:  [],
+        assignedSubjects: [],
+      });
+      await writeRecord('teachers', id, {
+        id, schoolId: selectedSchoolId,
+        firstName: tFirst.trim(), lastName: tLast.trim(),
+        email: tEmail.trim(), phone: '', staffId: '',
+        assignedClasses: [], assignedSubjects: [],
+        status: 'active', createdAt: Date.now(),
+      }, selectedSchoolId);
+      logActivity(selectedSchoolId, '', 'super-admin', 'teacher_created_by_superadmin', {
+        teacherName:  `${tFirst.trim()} ${tLast.trim()}`,
+        teacherEmail: tEmail.trim(),
+      });
+      setTFirst(''); setTLast(''); setTEmail(''); setTPassword('');
+      await loadSchoolData(selectedSchoolId);
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') setTError('This email is already registered.');
+      else setTError(err.message);
+    } finally {
+      setTAdding(false);
+    }
+  }
+
   const currentRecords = data?.[dataTab] || [];
   const filtered = search
     ? currentRecords.filter(r =>
@@ -1165,11 +1253,28 @@ function SchoolDataBrowser({ schools }) {
       )
     : currentRecords;
 
+  // Student → current class lookup (via active enrollment), so super admin
+  // can see which class each enrolled student belongs to.
+  const classById = Object.fromEntries((data?.classes || []).map(c => [c.id, c]));
+  const classByStudentId = {};
+  (data?.enrollments || []).forEach(e => {
+    if (e.status !== 'active') return;
+    const existing = classByStudentId[e.studentId];
+    if (!existing || (e.enrolledAt || 0) > (existing.enrolledAt || 0)) {
+      classByStudentId[e.studentId] = e;
+    }
+  });
+  function studentClassName(studentId) {
+    const enr = classByStudentId[studentId];
+    return enr ? (classById[enr.classId]?.name || '—') : null;
+  }
+
   // Render a row's key fields for each collection type
   function renderRow(r) {
     switch (dataTab) {
       case 'students':
-        return [`${r.firstName} ${r.lastName}`, r.studentCode, r.gender, r.status];
+        return [`${r.firstName} ${r.lastName}`, r.studentCode, r.gender,
+          studentClassName(r.id) || 'Not enrolled', r.status];
       case 'teachers':
         return [r.firstName + ' ' + r.lastName, r.email, r.phone || '—',
           (r.assignedClasses?.length || 0) + ' classes'];
@@ -1301,6 +1406,81 @@ function SchoolDataBrowser({ schools }) {
             ))}
           </div>
 
+          {/* Quick-add student, on behalf of this school */}
+          {dataTab === 'students' && (
+            <div className="card" style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: '.82rem', color: 'var(--navy)', marginBottom: 8 }}>
+                ⚡ Add Student — on behalf of {selectedSchool?.name}
+              </div>
+              {sError && <div className="alert alert-danger" style={{ marginBottom: 8 }}>{sError}</div>}
+              <form onSubmit={handleAddStudent} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: '1 1 120px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>First Name *</div>
+                  <input required value={sFirst} onChange={e => setSFirst(e.target.value)} placeholder="e.g. Kwame" />
+                </div>
+                <div style={{ flex: '1 1 120px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
+                  <input required value={sLast} onChange={e => setSLast(e.target.value)} placeholder="e.g. Mensah" />
+                </div>
+                <div style={{ flex: '0 0 90px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Gender</div>
+                  <select value={sGender} onChange={e => setSGender(e.target.value)}>
+                    <option>Male</option><option>Female</option>
+                  </select>
+                </div>
+                <div style={{ flex: '1 1 140px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Enroll in Class (optional)</div>
+                  <select value={sClass} onChange={e => setSClass(e.target.value)}>
+                    <option value="">— No class yet —</option>
+                    {(data?.classes || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-success btn-sm" disabled={sAdding || !sFirst.trim() || !sLast.trim()} style={{ alignSelf: 'flex-end', height: 36 }}>
+                  {sAdding ? '…' : '+ Add Student'}
+                </button>
+              </form>
+              {(data?.classes || []).length === 0 && (
+                <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6 }}>
+                  This school has no classes yet, so the student will be added without enrollment.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Quick-add teacher, on behalf of this school */}
+          {dataTab === 'teachers' && (
+            <div className="card" style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: '.82rem', color: 'var(--navy)', marginBottom: 8 }}>
+                ⚡ Add Teacher — on behalf of {selectedSchool?.name}
+              </div>
+              {tError && <div className="alert alert-danger" style={{ marginBottom: 8 }}>{tError}</div>}
+              <form onSubmit={handleAddTeacher} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: '1 1 110px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>First Name *</div>
+                  <input required value={tFirst} onChange={e => setTFirst(e.target.value)} placeholder="Kwame" />
+                </div>
+                <div style={{ flex: '1 1 110px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
+                  <input required value={tLast} onChange={e => setTLast(e.target.value)} placeholder="Mensah" />
+                </div>
+                <div style={{ flex: '2 1 180px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Email (login) *</div>
+                  <input type="email" required value={tEmail} onChange={e => setTEmail(e.target.value)} placeholder="teacher@school.com" />
+                </div>
+                <div style={{ flex: '1 1 130px' }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Password *</div>
+                  <input type="password" required minLength={6} value={tPassword} onChange={e => setTPassword(e.target.value)} placeholder="Min 6 chars" />
+                </div>
+                <button type="submit" className="btn btn-success btn-sm" disabled={tAdding || !tFirst || !tLast || !tEmail || !tPassword} style={{ alignSelf: 'flex-end', height: 36 }}>
+                  {tAdding ? '…' : '+ Add Teacher'}
+                </button>
+              </form>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6 }}>
+                Class and subject assignments can be edited from the school's own Teachers page later.
+              </div>
+            </div>
+          )}
+
           {/* Search */}
           <div className="card">
             <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
@@ -1328,7 +1508,7 @@ function SchoolDataBrowser({ schools }) {
                       <th style={{ fontSize: '.72rem' }}>ID</th>
                       {(() => {
                         const headers = {
-                          students:    ['Name', 'Code', 'Gender', 'Status'],
+                          students:    ['Name', 'Code', 'Gender', 'Class', 'Status'],
                           teachers:    ['Name', 'Email', 'Phone', 'Classes'],
                           classes:     ['Name', 'Level', 'Capacity'],
                           subjects:    ['Name', 'Code', 'Class/Exam'],
