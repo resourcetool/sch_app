@@ -356,6 +356,16 @@ export default function Teachers() {
     return items.filter(i => ids?.includes(i.id)).map(i => i.name);
   }
 
+  // ── DUPLICATE NAME DETECTION ────────────────────────────────────
+  const duplicateTeacherGroups = (() => {
+    const groups = {};
+    teachers.filter(t => t.status !== 'inactive').forEach(t => {
+      const key = `${(t.firstName || '').trim().toLowerCase()} ${(t.lastName || '').trim().toLowerCase()}`;
+      (groups[key] = groups[key] || []).push(t);
+    });
+    return Object.values(groups).filter(g => g.length > 1);
+  })();
+
   return (
     <div>
       <div className="page-header">
@@ -369,6 +379,37 @@ export default function Teachers() {
         <div className="alert alert-danger" style={{ marginBottom: 10 }}>
           {error}
           <button onClick={() => setError('')} style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
+
+      {duplicateTeacherGroups.length > 0 && (
+        <div className="card" style={{ marginBottom: 10, border: '1.5px solid #e65100', background: '#fff8f0' }}>
+          <div style={{ fontWeight: 700, fontSize: '.82rem', color: '#e65100', marginBottom: 8 }}>
+            ⚠ Possible Duplicate Teachers Found
+          </div>
+          {duplicateTeacherGroups.map((group, gi) => (
+            <div key={gi} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #ffe0b2' }}>
+              <div style={{ fontSize: '.8rem', fontWeight: 600, marginBottom: 4 }}>
+                {group[0].firstName} {group[0].lastName} — {group.length} entries
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {group.map(t => (
+                  <div key={t.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px',
+                    border: '1px solid var(--border)', borderRadius: 6, background: '#fff', fontSize: '.72rem',
+                  }}>
+                    <span>{t.email}</span>
+                    <button className="btn btn-danger btn-sm" style={{ fontSize: '.68rem', padding: '1px 6px' }} onClick={() => handleRemoveTeacher(t)}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
+            Removing deactivates the teacher's login and preserves their historical records.
+          </div>
         </div>
       )}
 
