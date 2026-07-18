@@ -160,7 +160,7 @@ function GenerateCodeModal({ onClose, onGenerated, prefilledSchool = '', prefill
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                 <button onClick={copyCode} className="btn btn-primary">📋 Copy Code</button>
                 <a
-                  href={`https://wa.me/?text=Your SchoolMS access code is: ${generated.code}%0ASchool: ${generated.schoolName}%0APlan: ${generated.plan.toUpperCase()}%0AExpires in 48 hours.`}
+                  href={`https://wa.me/?text=Your SchoolPilot access code is: ${generated.code}%0ASchool: ${generated.schoolName}%0APlan: ${generated.plan.toUpperCase()}%0AExpires in 48 hours.`}
                   target="_blank" rel="noreferrer"
                   className="btn btn-success"
                 >
@@ -710,7 +710,7 @@ function EmailComposerPanel({ schools, userProfile }) {
       if (mode === 'individual') {
         const email = toEmail.trim() || schools.find(s => s.id === toSchool)?.subscription?.adminEmail;
         if (!email) { setError('Enter an email address or select a school'); setSending(false); return; }
-        await sendSuperAdminEmail(email, subject, body, 'SchoolMS Team');
+        await sendSuperAdminEmail(email, subject, body, 'SchoolPilot Team');
         setResult({ sent: [{ email }], failed: [] });
       } else {
         const res = await broadcastEmailToAllSchools(subject, body, bulkTargets);
@@ -800,7 +800,7 @@ function EmailComposerPanel({ schools, userProfile }) {
 
           <div className="form-group">
             <label style={{ fontSize: '.75rem' }}>Subject *</label>
-            <input required value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Important update about SchoolMS" />
+            <input required value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Important update about SchoolPilot" />
           </div>
 
           <div className="form-group">
@@ -829,9 +829,9 @@ function EmailComposerPanel({ schools, userProfile }) {
         <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: '.85rem' }}>Quick Templates</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[
-            ['Payment Reminder', 'Reminder: Your SchoolMS subscription', 'Dear School Admin,\n\nThis is a friendly reminder that your SchoolMS subscription is due for renewal.\n\nTo continue enjoying uninterrupted access, please make your payment and contact us on WhatsApp at 0549548274.\n\nThank you for using SchoolMS.\n\nBest regards,\nSchoolMS Team'],
-            ['Trial Approved', 'Your SchoolMS Free Trial is Now Active!', 'Dear School Admin,\n\nGreat news! Your SchoolMS free trial request has been approved. You can now log in and start setting up your school.\n\nIf you need any help getting started, tap "Help & Support" in the app menu or WhatsApp us at 0549548274.\n\nWelcome to SchoolMS!\n\nBest regards,\nSchoolMS Team'],
-            ['System Update', 'Important Update to SchoolMS', 'Dear School Admin,\n\nWe have made improvements to SchoolMS. Please log out and log back in to get the latest updates.\n\nIf you experience any issues, contact us on WhatsApp at 0549548274.\n\nThank you.\n\nSchoolMS Team'],
+            ['Payment Reminder', 'Reminder: Your SchoolPilot subscription', 'Dear School Admin,\n\nThis is a friendly reminder that your SchoolPilot subscription is due for renewal.\n\nTo continue enjoying uninterrupted access, please make your payment and contact us on WhatsApp at 0549548274.\n\nThank you for using SchoolPilot.\n\nBest regards,\nSchoolPilot Team'],
+            ['Trial Approved', 'Your SchoolPilot Free Trial is Now Active!', 'Dear School Admin,\n\nGreat news! Your SchoolPilot free trial request has been approved. You can now log in and start setting up your school.\n\nIf you need any help getting started, tap "Help & Support" in the app menu or WhatsApp us at 0549548274.\n\nWelcome to SchoolPilot!\n\nBest regards,\nSchoolPilot Team'],
+            ['System Update', 'Important Update to SchoolPilot', 'Dear School Admin,\n\nWe have made improvements to SchoolPilot. Please log out and log back in to get the latest updates.\n\nIf you experience any issues, contact us on WhatsApp at 0549548274.\n\nThank you.\n\nSchoolPilot Team'],
           ].map(([label, tmplSubject, tmplBody]) => (
             <button
               key={label}
@@ -1647,9 +1647,25 @@ function SchoolDataBrowser({ schools }) {
       )
     : null;
 
+  // Plan student limit — strictly enforced here too, since super admin is
+  // acting ON BEHALF OF the school and should not be able to silently push
+  // it over its own plan's cap. (Super admin can still raise the plan
+  // itself from the Schools tab if the school genuinely needs more room.)
+  const schoolPlan       = PLANS[selectedSchool?.subscription?.plan] || PLANS.trial;
+  const schoolStudentCap = schoolPlan.maxStudents;
+  const sAtLimit         = (data?.students?.length || 0) >= schoolStudentCap;
+
   async function handleAddStudent(e) {
     e.preventDefault();
     if (!sFirst.trim() || !sLast.trim() || !selectedSchoolId) return;
+    if (sAtLimit) {
+      setSError(
+        `${selectedSchool?.name || 'This school'}'s ${schoolPlan.name} plan is limited to ` +
+        `${schoolStudentCap} students, and it's already at that limit. Upgrade the school's plan ` +
+        `from the Schools tab to add more.`
+      );
+      return;
+    }
     if (sNameMatch && !window.confirm(
       `A student named "${sFirst.trim()} ${sLast.trim()}" already exists in this school ` +
       `(code ${sNameMatch.studentCode}). Add another student with the same name anyway?`
@@ -1909,33 +1925,42 @@ function SchoolDataBrowser({ schools }) {
           {/* Quick-add student, on behalf of this school */}
           {dataTab === 'students' && (
             <div className="card" style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, fontSize: '.82rem', color: 'var(--navy)', marginBottom: 8 }}>
-                ⚡ Add Student — on behalf of {selectedSchool?.name}
+              <div style={{ fontWeight: 700, fontSize: '.82rem', color: 'var(--navy)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <span>⚡ Add Student — on behalf of {selectedSchool?.name}</span>
+                <span style={{ fontWeight: 400, color: sAtLimit ? 'var(--danger)' : 'var(--text-lt)', fontSize: '.76rem' }}>
+                  {data?.students?.length || 0} / {schoolStudentCap} students ({schoolPlan.name} plan)
+                </span>
               </div>
               {sError && <div className="alert alert-danger" style={{ marginBottom: 8 }}>{sError}</div>}
+              {sAtLimit && (
+                <div className="alert alert-warning" style={{ marginBottom: 8 }}>
+                  🚫 This school's {schoolPlan.name} plan is limited to {schoolStudentCap} students and is already at that limit.
+                  Upgrade the plan from the Schools tab to add more.
+                </div>
+              )}
               <form onSubmit={handleAddStudent} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div style={{ flex: '1 1 120px' }}>
                   <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>First Name *</div>
-                  <input required value={sFirst} onChange={e => setSFirst(e.target.value)} placeholder="e.g. Kwame" />
+                  <input required disabled={sAtLimit} value={sFirst} onChange={e => setSFirst(e.target.value)} placeholder="e.g. Kwame" />
                 </div>
                 <div style={{ flex: '1 1 120px' }}>
                   <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
-                  <input required value={sLast} onChange={e => setSLast(e.target.value)} placeholder="e.g. Mensah" />
+                  <input required disabled={sAtLimit} value={sLast} onChange={e => setSLast(e.target.value)} placeholder="e.g. Mensah" />
                 </div>
                 <div style={{ flex: '0 0 90px' }}>
                   <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Gender</div>
-                  <select value={sGender} onChange={e => setSGender(e.target.value)}>
+                  <select disabled={sAtLimit} value={sGender} onChange={e => setSGender(e.target.value)}>
                     <option>Male</option><option>Female</option>
                   </select>
                 </div>
                 <div style={{ flex: '1 1 140px' }}>
                   <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Enroll in Class (optional)</div>
-                  <select value={sClass} onChange={e => setSClass(e.target.value)}>
+                  <select disabled={sAtLimit} value={sClass} onChange={e => setSClass(e.target.value)}>
                     <option value="">— No class yet —</option>
                     {(data?.classes || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
-                <button type="submit" className="btn btn-success btn-sm" disabled={sAdding || !sFirst.trim() || !sLast.trim()} style={{ alignSelf: 'flex-end', height: 36 }}>
+                <button type="submit" className="btn btn-success btn-sm" disabled={sAdding || sAtLimit || !sFirst.trim() || !sLast.trim()} style={{ alignSelf: 'flex-end', height: 36 }}>
                   {sAdding ? '…' : '+ Add Student'}
                 </button>
               </form>
