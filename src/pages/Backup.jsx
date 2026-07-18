@@ -57,9 +57,21 @@ export default function Backup() {
     localStorage.setItem(`backup_log_${schoolId}`, JSON.stringify(updated));
   }
 
+  // Runtime guard — enforced on every action, not just hidden by the UI.
+  // The backup tab is already hidden client-side when the plan doesn't
+  // include it, but these checks make sure the underlying actions can
+  // never run without an active backup entitlement (Premium plan or the
+  // backup add-on), regardless of how they're triggered.
+  function assertBackupUnlocked() {
+    if (!backupUnlocked) {
+      throw new Error('Data backup is not included in your current plan. Upgrade to Premium or add the Backup add-on to use this feature.');
+    }
+  }
+
   async function handleManualBackupJSON() {
     setBackupLoading(true);
     try {
+      assertBackupUnlocked();
       const pkg = await createBackupPackage(schoolId);
       exportAsJSON(pkg, `${school?.code || 'school'}_backup_${new Date().toISOString().split('T')[0]}.json`);
       addLog('Manual Backup (JSON)', `${pkg.metadata.totalRecords} records`);
@@ -77,6 +89,7 @@ export default function Backup() {
   async function handleManualBackupExcel() {
     setBackupLoading(true);
     try {
+      assertBackupUnlocked();
       await exportAsExcel(schoolId, `${school?.code || 'school'}_backup_${new Date().toISOString().split('T')[0]}.xlsx`);
       addLog('Manual Backup (Excel)', 'All collections exported');
     } catch (err) {
@@ -88,6 +101,7 @@ export default function Backup() {
 
   async function handleStudentsExport() {
     try {
+      assertBackupUnlocked();
       await exportStudentsAsExcel(schoolId);
       addLog('Students Export (Excel)', '');
     } catch (err) {
@@ -98,6 +112,13 @@ export default function Backup() {
   async function handleRestoreFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
+    try {
+      assertBackupUnlocked();
+    } catch (err) {
+      alert(err.message);
+      e.target.value = '';
+      return;
+    }
     setRestoreFile(file);
     try {
       const preview = await previewRestore(file);
@@ -110,6 +131,12 @@ export default function Backup() {
 
   async function handleExecuteRestore() {
     if (!restorePreview) return;
+    try {
+      assertBackupUnlocked();
+    } catch (err) {
+      alert(err.message);
+      return;
+    }
     if (!window.confirm(
       `RESTORE CONFIRMATION\n\nThis will import ${restorePreview.metadata?.totalRecords} records into your school.\n\nExisting records with the same IDs will be overwritten.\n\nProceed?`
     )) return;
