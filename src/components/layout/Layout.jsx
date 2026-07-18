@@ -30,6 +30,7 @@ const ADMIN_NAV = [
   { to: '/backup',      icon: '💾', label: 'Backup',    feature: 'backup' },
   { to: '/settings',    icon: '⚙️', label: 'Settings'   },
   { section: 'Help' },
+  { to: '/pricing',     icon: '💳', label: 'Pricing'    },
   { to: '/support',     icon: '🆘', label: 'Help & Support' },
 ];
 
@@ -41,6 +42,7 @@ const TEACHER_NAV = [
   { to: '/reports',   icon: '📄', label: 'Reports'    },
   { to: '/analytics', icon: '📈', label: 'Analytics'  },
   { section: 'Help' },
+  { to: '/pricing',   icon: '💳', label: 'Pricing'    },
   { to: '/support',   icon: '🆘', label: 'Help & Support' },
 ];
 
