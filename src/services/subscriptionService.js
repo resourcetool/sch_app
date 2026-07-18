@@ -56,7 +56,7 @@ export const PLANS = {
     durationDays: 21,
     features: {
       backup: false,
-      analytics: true,
+      analytics: false,   // Analytics is a paid-plan feature — not available during the free trial
       promotion: true,
       watermark: true,
       multiAdmin: false,
@@ -134,6 +134,54 @@ export const PLANS = {
 
 export const BACKUP_ADDON_PRICE         = 100;  // GHS/month
 export const BACKUP_ADDON_TERMLY_PRICE  = 350;  // GHS/term (3.5 × 100) — saves GHS 50
+
+// ── PLAN FEATURE DESCRIPTIONS ─────────────────────────────────────
+// Plain-language explanation of what each plan includes, shown wherever
+// a school (or super admin, on a school's behalf) is choosing a plan —
+// so the choice is informed rather than a guess. Kept in one place so
+// the renewal screen, the expired-subscription screen, and super admin's
+// renewal tool all describe plans identically.
+export const PLAN_FEATURE_LIST = {
+  starter: [
+    'Up to 200 students',
+    'Unlimited classes & subjects',
+    'Score entry for teachers',
+    'PDF report cards (SchoolMS watermark shown)',
+    'Promotion engine (end-of-year promotion wizard)',
+    'Works fully offline',
+    '✗ No performance analytics/charts',
+    '✗ No data backup & restore tools',
+  ],
+  pro: [
+    'Unlimited students',
+    'Unlimited classes & subjects',
+    'Score entry for teachers',
+    'Clean PDF report cards — no watermark',
+    'Promotion engine (end-of-year promotion wizard)',
+    'Works fully offline',
+    '✓ Performance analytics — class trends, subject comparison, student progress',
+    '✗ No data backup & restore tools (can be added separately)',
+  ],
+  premium: [
+    'Unlimited students',
+    'Unlimited classes & subjects',
+    'Score entry for teachers',
+    'Clean PDF report cards — no watermark',
+    'Promotion engine (end-of-year promotion wizard)',
+    'Works fully offline',
+    '✓ Performance analytics — class trends, subject comparison, student progress',
+    '✓ Data backup & restore included',
+    '✓ Multiple admin accounts',
+    '✓ Priority WhatsApp support',
+  ],
+};
+
+// One-line summary of who each plan suits — used next to the plan name
+export const PLAN_SUMMARY = {
+  starter: 'Best for small schools (under 200 students) that just need reports done right — no analytics needed yet.',
+  pro:     'Best for schools that want to track performance trends over time, not just print reports.',
+  premium: 'Best for schools that want everything handled — analytics, backups, and multiple staff logins — with zero add-ons to think about.',
+};
 
 // Helper — get the price for a plan + billing cycle combination
 export function getPlanPrice(planId, cycle = 'monthly') {
