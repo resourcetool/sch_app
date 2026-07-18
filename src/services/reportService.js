@@ -63,6 +63,15 @@ function addLogoToDoc(doc, logoBase64, x, y, size) {
   }
 }
 
+// Formats a score for print: rounds to 2 decimal places but strips
+// trailing zeros, so 34.00 → "34", 34.50 → "34.5", 34.567 → "34.57".
+// Whole-number scores (the overwhelming majority) print clean, while any
+// score that genuinely has a fractional part still shows it accurately.
+function formatScore(n) {
+  if (typeof n !== 'number' || isNaN(n)) return n || '—';
+  return String(Math.round(n * 100) / 100);
+}
+
 function gradeNo(grade, gradingScale) {
   const sorted = [...gradingScale].sort((a, b) => b.min - a.min);
   const idx    = sorted.findIndex(g => g.grade === grade);
@@ -257,9 +266,9 @@ export async function generateStudentReportPDF(
     const gNo    = gradeNo(grInfo.grade, gradingScale);
     return [
       sr.subjectName || '—',
-      typeof sr.classScore === 'number' ? sr.classScore.toFixed(2) : (sr.classScore || '—'),
-      typeof sr.examScore  === 'number' ? sr.examScore.toFixed(2)  : (sr.examScore  || '—'),
-      typeof sr.total      === 'number' ? sr.total.toFixed(2)      : (sr.total      || '—'),
+      typeof sr.classScore === 'number' ? formatScore(sr.classScore) : (sr.classScore || '—'),
+      typeof sr.examScore  === 'number' ? formatScore(sr.examScore)  : (sr.examScore  || '—'),
+      typeof sr.total      === 'number' ? formatScore(sr.total)      : (sr.total      || '—'),
       grInfo.grade,
       gNo,
       grInfo.remarks || '—',
