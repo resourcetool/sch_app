@@ -17,10 +17,17 @@ const LEVELS = ['Nursery', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3',
   'SHS 1', 'SHS 2', 'SHS 3', 'Form 1', 'Form 2', 'Form 3'];
 
 function EditModal({ cls, subjects, onClose, onSave }) {
+  // Initial selection is the UNION of both directions — subjects already
+  // linked via cls.subjectIds, PLUS any subject that links back to this
+  // class via its own classIds (assigned from the Subjects page). This
+  // way the toggle grid always reflects reality, not just this one side.
+  const reciprocalSubjectIds = subjects.filter(s => s.classIds?.includes(cls.id)).map(s => s.id);
+  const initialSubjectIds = Array.from(new Set([...(cls.subjectIds || []), ...reciprocalSubjectIds]));
+
   const [form, setForm] = useState({
     name: cls.name, level: cls.level || '', capacity: cls.capacity || '',
     description: cls.description || '',
-    subjectIds: cls.subjectIds || [],
+    subjectIds: initialSubjectIds,
   });
   const [saving, setSaving] = useState(false);
 
@@ -120,6 +127,23 @@ export default function Classes() {
     const record = { id, schoolId, ...data, updatedAt: Date.now() };
     if (!data.id) record.createdAt = Date.now();
     await writeRecord('classes', id, record, schoolId);
+
+    // Keep the reverse link in sync — every subject's own classIds array is
+    // updated to match what was just chosen here, so a subject assigned to
+    // this class from the Subjects page also shows correctly here (and
+    // vice versa), no matter which page someone edits from next time.
+    const subjectIds = record.subjectIds || [];
+    for (const s of subjects) {
+      const shouldHave = subjectIds.includes(s.id);
+      const currentlyHas = s.classIds?.includes(id) || false;
+      if (shouldHave !== currentlyHas) {
+        const nextClassIds = shouldHave
+          ? [...(s.classIds || []), id]
+          : (s.classIds || []).filter(cid => cid !== id);
+        await writeRecord('subjects', s.id, { ...s, classIds: nextClassIds, updatedAt: Date.now() }, schoolId);
+      }
+    }
+
     await refresh();
   }
 
