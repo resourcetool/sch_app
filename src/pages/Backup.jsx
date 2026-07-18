@@ -6,9 +6,9 @@ import { useSubscription } from '../contexts/SubscriptionContext';
 import {
   createBackupPackage, exportAsJSON, exportAsExcel,
   exportStudentsAsExcel, previewRestore, executeRestore,
-  getBackupSchedule, saveBackupSchedule, shouldRunBackup
+  getBackupSchedule, saveBackupSchedule, shouldRunBackup,
+  getSchoolDataStatus,
 } from '../services/backupService';
-import { getDBStats } from '../services/indexedDB';
 import FeatureGate from '../components/common/FeatureGate';
 
 function StatRow({ label, value }) {
@@ -26,6 +26,9 @@ export default function Backup() {
   const { can } = useSubscription();
   const backupUnlocked = can('backup');
   const [dbStats, setDbStats] = useState({});
+  const [statsSource, setStatsSource] = useState('cache'); // 'live' | 'cache'
+  const [statsAsOf, setStatsAsOf] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [restorePreview, setRestorePreview] = useState(null);
@@ -46,8 +49,16 @@ export default function Backup() {
   }, [schoolId]);
 
   async function loadStats() {
-    const s = await getDBStats();
-    setDbStats(s);
+    if (!schoolId) return;
+    setStatsLoading(true);
+    try {
+      const { counts, source, asOf } = await getSchoolDataStatus(schoolId);
+      setDbStats(counts);
+      setStatsSource(source);
+      setStatsAsOf(asOf);
+    } finally {
+      setStatsLoading(false);
+    }
   }
 
   function addLog(action, details) {
@@ -189,7 +200,28 @@ export default function Backup() {
       {tab === 'backup' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div className="card">
-            <div className="card-header"><span className="card-title">Database Status</span></div>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="card-title">Database Status</span>
+              <button
+                onClick={loadStats}
+                className="btn btn-ghost btn-sm"
+                disabled={statsLoading}
+                title="Refresh counts"
+                style={{ fontSize: '.72rem', padding: '2px 10px' }}
+              >
+                {statsLoading ? '…' : '↻ Refresh'}
+              </button>
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10,
+              fontSize: '.72rem', color: statsSource === 'live' ? 'var(--success)' : 'var(--text-lt)',
+            }}>
+              {statsSource === 'live' ? (
+                <>🟢 Live from database{statsAsOf ? ` — as of ${new Date(statsAsOf).toLocaleTimeString()}` : ''}</>
+              ) : (
+                <>📴 From local offline cache{statsAsOf ? ` — as of ${new Date(statsAsOf).toLocaleTimeString()}` : ''} (may not reflect the very latest changes until you're back online)</>
+              )}
+            </div>
             <StatRow label="Students" value={dbStats.students || 0} />
             <StatRow label="Enrollments" value={dbStats.enrollments || 0} />
             <StatRow label="Teachers" value={dbStats.teachers || 0} />
