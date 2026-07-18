@@ -9,7 +9,7 @@
 //    obvious choice. It's close in price but missing key features.
 //    Nobody buys Starter — it just makes Pro feel like a steal.
 //
-// 3. LOSS AVERSION — "What you lose without SchoolMS" framing.
+// 3. LOSS AVERSION — "What you lose without SchoolPilot" framing.
 //    People feel losses 2x stronger than equivalent gains.
 //    "You are losing GHS 400 worth of teacher time every term" hurts
 //    more than "you will save GHS 400" feels good.
@@ -32,7 +32,7 @@
 //    support — all free. When you give first, people feel obligated
 //    to give back. The subscription feels like returning a favour.
 //
-// 9. FEAR OF MISSING OUT (FOMO) — "Schools using SchoolMS get results
+// 9. FEAR OF MISSING OUT (FOMO) — "Schools using SchoolPilot get results
 //    out 3 hours before schools still doing it manually on speech day."
 //    Paints a vivid picture of being left behind.
 //
@@ -140,7 +140,7 @@ function ROICalculator() {
             <span style={{ fontWeight: 900, color: '#E94560', fontSize: '1rem' }}>GHS {totalWastedPerTerm.toLocaleString()}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.88rem', color: '#333' }}>
-            <span style={{ fontWeight: 700 }}>SchoolMS Pro (per term)</span>
+            <span style={{ fontWeight: 700 }}>SchoolPilot Pro (per term)</span>
             <span style={{ fontWeight: 900, color: '#27AE60', fontSize: '1rem' }}>GHS {schoolmsProTermly.toLocaleString()}</span>
           </div>
           <div style={{ height: 1, background: '#e0e0e0' }} />
@@ -161,7 +161,7 @@ function ROICalculator() {
 
       {netSavingPerTerm > 0 && (
         <div style={{ marginTop: 12, fontSize: '.78rem', color: '#888', textAlign: 'center', lineHeight: 1.6 }}>
-          Based on your numbers, SchoolMS pays for itself and saves you an additional<br />
+          Based on your numbers, SchoolPilot pays for itself and saves you an additional<br />
           <strong style={{ color: '#27AE60' }}>GHS {netSavingPerTerm.toLocaleString()}</strong> in recovered teacher time and reduced paper costs — every single term.
         </div>
       )}
@@ -284,7 +284,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
 
         {/* CTA */}
         <a
-          href={wa(`Hello, I want to start on the SchoolMS ${plan.name} plan — ${cycle === 'termly' ? 'GHS ' + price + ' per term' : 'GHS ' + price + ' per month'}. Please guide me.`)}
+          href={wa(`Hello, I want to start on the SchoolPilot ${plan.name} plan — ${cycle === 'termly' ? 'GHS ' + price + ' per term' : 'GHS ' + price + ' per month'}. Please guide me.`)}
           target="_blank" rel="noreferrer"
           style={{
             display: 'block', textAlign: 'center',
@@ -324,7 +324,7 @@ export default function Pricing() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Link to={backTo} style={{ color: 'rgba(255,255,255,.6)', fontSize: '.82rem', textDecoration: 'none' }}>{backLabel}</Link>
           <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,.2)' }} />
-          <span style={{ color: '#fff', fontWeight: 800, fontSize: '.95rem' }}>🏫 SchoolMS</span>
+          <span style={{ color: '#fff', fontWeight: 800, fontSize: '.95rem' }}>🏫 SchoolPilot</span>
         </div>
         {!user && (
           <Link to="/trial" style={{
@@ -359,7 +359,7 @@ export default function Pricing() {
             borderRadius: 12, padding: '14px 20px', marginBottom: 24,
             fontSize: '.85rem', color: '#ff8a9b', lineHeight: 1.6,
           }}>
-            📢 Schools using SchoolMS printed their Term 3 report cards in under 2 hours on speech day —
+            📢 Schools using SchoolPilot printed their Term 3 report cards in under 2 hours on speech day —
             while other schools were still calculating grades by hand.
           </div>
 
@@ -405,7 +405,7 @@ export default function Pricing() {
             The hidden cost of doing it manually
           </div>
           <h2 style={{ fontSize: '1.3rem', color: '#1a1a2e', margin: 0 }}>
-            What your school loses every term without SchoolMS
+            What your school loses every term without SchoolPilot
           </h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -593,7 +593,7 @@ export default function Pricing() {
               Start My Free Trial →
             </Link>
             <a
-              href={wa('Hello, I would like to know more about SchoolMS before subscribing.')}
+              href={wa('Hello, I would like to know more about SchoolPilot before subscribing.')}
               target="_blank" rel="noreferrer"
               style={{
                 background: 'rgba(255,255,255,.1)',
@@ -631,19 +631,19 @@ export default function Pricing() {
             },
             {
               q: 'GHS 150 feels expensive for a small school.',
-              a: 'Your school already spends more than GHS 150 on paper and ink for report cards alone. Use the calculator above to see your actual cost. For most schools, SchoolMS is not an extra expense — it replaces what you already spend, and gives back hours of teacher time on top.',
+              a: 'Your school already spends more than GHS 150 on paper and ink for report cards alone. Use the calculator above to see your actual cost. For most schools, SchoolPilot is not an extra expense — it replaces what you already spend, and gives back hours of teacher time on top.',
             },
             {
               q: 'What if the internet goes off?',
-              a: 'SchoolMS works completely offline. Enter scores, view students, do everything — with or without internet. When you get signal, even on mobile data for 5 minutes, everything syncs automatically.',
+              a: 'SchoolPilot works completely offline. Enter scores, view students, do everything — with or without internet. When you get signal, even on mobile data for 5 minutes, everything syncs automatically.',
             },
             {
-              q: 'Is our data safe? What if SchoolMS closes down?',
+              q: 'Is our data safe? What if SchoolPilot closes down?',
               a: 'All data is backed up in Google Firebase — the same platform used by companies like Duolingo and Canva. You can export your complete school data as an Excel or JSON file any time you want — so your data is always yours, regardless of what happens to us.',
             },
             {
               q: 'We tried software before and it was too complicated.',
-              a: 'SchoolMS was built specifically for Ghanaian schools — not adapted from a Western system. Every teacher who has used it entered their first scores within 10 minutes. The training videos walk through every single step. And if you get stuck, WhatsApp us — a real person responds, not a bot.',
+              a: 'SchoolPilot was built specifically for Ghanaian schools — not adapted from a Western system. Every teacher who has used it entered their first scores within 10 minutes. The training videos walk through every single step. And if you get stuck, WhatsApp us — a real person responds, not a bot.',
             },
           ].map((item, i) => (
             <details key={i} style={{
@@ -672,7 +672,7 @@ export default function Pricing() {
 
       {/* ── FOOTER ── */}
       <div style={{ textAlign: 'center', padding: '48px 24px 40px', color: '#aaa', fontSize: '.8rem' }}>
-        <div style={{ marginBottom: 8, fontWeight: 700, color: '#666' }}>SchoolMS — Built for Ghana's Schools</div>
+        <div style={{ marginBottom: 8, fontWeight: 700, color: '#666' }}>SchoolPilot — Built for Ghana's Schools</div>
         <div>📱 WhatsApp: 0549548274 &nbsp;·&nbsp; ✉ schoolpilot132@gmail.com</div>
         <div style={{ marginTop: 16, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
           {!user && <Link to="/login"    style={{ color: '#aaa', textDecoration: 'none' }}>Sign In</Link>}
