@@ -9,8 +9,10 @@
 // - Status badges and class shown inline
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useSchool }  from '../contexts/SchoolContext';
 import { useAuth }    from '../contexts/AuthContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import {
   getStudents, createStudent, updateStudent,
   enrollStudent, getEnrollments, importStudentsFromArray, deleteStudentPermanently,
@@ -186,6 +188,7 @@ function EnrollModal({ student, school, classes, onClose, onSave }) {
 export default function Students() {
   const { school, classes, schoolId } = useSchool();
   const { userProfile }               = useAuth();
+  const { studentLimit, plan }        = useSubscription();
 
   const isAdmin = userProfile?.role === 'admin';
 
@@ -244,6 +247,13 @@ export default function Students() {
     return Object.values(groups).filter(g => g.length > 1);
   })();
 
+  // ── PLAN STUDENT LIMIT — strictly enforced, never exceeded ─────────
+  // students.length reflects the real active count (removal is now a
+  // permanent hard-delete, so there's no soft-deleted/withdrawn students
+  // inflating the number).
+  const atLimit        = studentLimit != null && students.length >= studentLimit;
+  const remainingSlots = studentLimit != null ? Math.max(0, studentLimit - students.length) : Infinity;
+
   // Live check — does the name currently typed in Quick Add match an
   // existing student? Shown as an inline warning before they even submit.
   const qNameMatch = (qFirst.trim() && qLast.trim())
@@ -257,6 +267,13 @@ export default function Students() {
   async function handleQuickAdd(e) {
     e.preventDefault();
     if (!qFirst.trim() || !qLast.trim()) return;
+    if (atLimit) {
+      setError(
+        `Your ${plan?.name || 'current'} plan is limited to ${studentLimit} students, and you're ` +
+        `already at that limit. Upgrade your plan to add more students.`
+      );
+      return;
+    }
     if (qNameMatch && !window.confirm(
       `A student named "${qFirst.trim()} ${qLast.trim()}" already exists ` +
       `(code ${qNameMatch.studentCode}). Add another student with the same name anyway?`
@@ -285,6 +302,12 @@ export default function Students() {
     if (selected) {
       await updateStudent(schoolId, selected.id, form);
     } else {
+      if (atLimit) {
+        throw new Error(
+          `Your ${plan?.name || 'current'} plan is limited to ${studentLimit} students, and you're ` +
+          `already at that limit. Upgrade your plan to add more students.`
+        );
+      }
       await createStudent(schoolId, form, school?.code || 'STU', students.length);
     }
     await load();
@@ -317,13 +340,21 @@ export default function Students() {
   async function handleImport(e) {
     const file = e.target.files[0];
     if (!file) return;
+    if (atLimit) {
+      alert(
+        `Your ${plan?.name || 'current'} plan is limited to ${studentLimit} students, and you're ` +
+        `already at that limit. Upgrade your plan before importing more students.`
+      );
+      e.target.value = '';
+      return;
+    }
     setImporting(true);
     try {
       const rows = await importStudentsFromExcel(file, schoolId);
       if (rows.length === 0) {
         alert(
           'No students found in the file.\n\n' +
-          'Make sure you are using the SchoolMS template and that:\n' +
+          'Make sure you are using the SchoolPilot template and that:\n' +
           '• First Name and Last Name columns are filled in\n' +
           '• The file is saved as .xlsx (not .csv)\n' +
           '• You deleted or replaced the example rows before saving\n\n' +
@@ -331,11 +362,32 @@ export default function Students() {
         );
         return;
       }
-      const result = await importStudentsFromArray(schoolId, rows, school?.code || 'STU', students.length);
+
+      // Strictly cap the import so the plan limit is never exceeded —
+      // even if the file itself contains more rows than remaining slots.
+      let rowsToImport = rows;
+      let trimmedCount = 0;
+      if (remainingSlots !== Infinity && rows.length > remainingSlots) {
+        trimmedCount = rows.length - remainingSlots;
+        rowsToImport = rows.slice(0, remainingSlots);
+        if (remainingSlots === 0) {
+          alert(`Your ${plan?.name || 'current'} plan is limited to ${studentLimit} students, and you're already at that limit.`);
+          return;
+        }
+        if (!window.confirm(
+          `This file has ${rows.length} students, but your ${plan?.name || 'current'} plan only has ` +
+          `${remainingSlots} slot(s) left (limit: ${studentLimit}).\n\n` +
+          `Only the first ${remainingSlots} will be imported, and ${trimmedCount} will be skipped. ` +
+          `Upgrade your plan first if you need to import all of them. Continue with a partial import?`
+        )) return;
+      }
+
+      const result = await importStudentsFromArray(schoolId, rowsToImport, school?.code || 'STU', students.length);
+      const skippedForLimit = trimmedCount > 0 ? `\n${trimmedCount} row(s) were skipped — plan limit reached.` : '';
       const msg = result.errors.length
         ? `✓ Imported ${result.success.length} student(s).\n\n` +
-          `${result.errors.length} row(s) were skipped — likely duplicate student IDs or missing required fields.`
-        : `✓ Successfully imported ${result.success.length} student(s).`;
+          `${result.errors.length} row(s) were skipped — likely duplicate student IDs or missing required fields.${skippedForLimit}`
+        : `✓ Successfully imported ${result.success.length} student(s).${skippedForLimit}`;
       alert(msg);
       await load();
     } catch (err) {
@@ -349,7 +401,12 @@ export default function Students() {
   return (
     <div>
       <div className="page-header">
-        <h1>Students <span style={{ fontSize: '.85rem', fontWeight: 400, color: 'var(--text-lt)' }}>({students.length})</span></h1>
+        <h1>
+          Students{' '}
+          <span style={{ fontSize: '.85rem', fontWeight: 400, color: atLimit ? 'var(--danger)' : 'var(--text-lt)' }}>
+            ({students.length}{studentLimit != null ? ` / ${studentLimit}` : ''})
+          </span>
+        </h1>
         {isAdmin && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
@@ -360,16 +417,40 @@ export default function Students() {
             >
               ⬇ Download Template
             </button>
-            <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <label
+              className="btn btn-ghost btn-sm"
+              style={{
+                cursor: atLimit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                opacity: atLimit ? .5 : 1,
+              }}
+              title={atLimit ? `Plan limit of ${studentLimit} students reached — upgrade to import more` : ''}
+            >
               {importing ? '⏳ Importing…' : '⬆ Import Excel'}
-              <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImport} />
+              <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImport} disabled={atLimit} />
             </label>
-            <button className="btn btn-primary btn-sm" onClick={() => { setSelected(null); setModal('add'); }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => { setSelected(null); setModal('add'); }}
+              disabled={atLimit}
+              title={atLimit ? `Plan limit of ${studentLimit} students reached — upgrade to add more` : ''}
+            >
               + Full Add
             </button>
           </div>
         )}
       </div>
+
+      {atLimit && (
+        <div className="alert alert-warning" style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <span>
+            🚫 You've reached your {plan?.name || 'current'} plan's limit of <strong>{studentLimit} students</strong>.
+            Remove an inactive student or upgrade your plan to add more.
+          </span>
+          <Link to="/settings" style={{ fontWeight: 700, color: 'var(--navy)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            View Plans →
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="alert alert-danger" style={{ marginBottom: 10 }}>
@@ -409,10 +490,23 @@ export default function Students() {
       )}
 
       {/* ── QUICK ADD ROW ── */}
-      {isAdmin && (
+      {isAdmin && atLimit && (
+        <div className="card" style={{ marginBottom: 10, textAlign: 'center', padding: '14px' }}>
+          <div style={{ fontSize: '.84rem', color: 'var(--text-mid)' }}>
+            ⚡ Quick Add is disabled — you're at your plan's {studentLimit}-student limit.{' '}
+            <Link to="/settings" style={{ color: 'var(--navy)', fontWeight: 700 }}>Upgrade your plan</Link> to add more.
+          </div>
+        </div>
+      )}
+      {isAdmin && !atLimit && (
         <div className="card" style={{ marginBottom: 10 }}>
           <div style={{ fontWeight: 700, fontSize: '.82rem', color: 'var(--navy)', marginBottom: 8 }}>
             ⚡ Quick Add Student
+            {studentLimit != null && (
+              <span style={{ fontWeight: 400, color: 'var(--text-lt)', marginLeft: 8 }}>
+                ({remainingSlots} slot{remainingSlots !== 1 ? 's' : ''} left on your plan)
+              </span>
+            )}
           </div>
           <form onSubmit={handleQuickAdd} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ flex: '1 1 120px' }}>
