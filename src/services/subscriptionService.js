@@ -24,8 +24,8 @@ import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firest
 // that operate on a term budget rather than a monthly salary cycle.
 //
 // Monthly:  pay every 30 days
-// Termly:   pay once per term (~120 days = 4 months)
-//           priced at 3.5 months instead of 4 → small saving built in
+// Termly:   pay once per term (~90 days = 3 months)
+//           priced at 2.5 months instead of 3 → small saving built in
 //           so termly feels like a reward, not a trap
 
 export const BILLING_CYCLES = {
@@ -40,9 +40,9 @@ export const BILLING_CYCLES = {
   termly: {
     id:           'termly',
     label:        'Per Term',
-    durationDays: 120,   // ~1 school term (4 months)
-    // School pays for 3.5 months instead of 4 — saves half a month
-    multiplier:   3.5,
+    durationDays: 90,   // 1 school term = 3 months
+    // School pays for 2.5 months instead of 3 — saves half a month
+    multiplier:   2.5,
     saving:       'Save half a month every term',
   },
 };
@@ -71,7 +71,7 @@ export const PLANS = {
     id: 'starter',
     name: 'Starter',
     price: 150,           // GHS per month
-    termlyPrice: 525,     // GHS per term (3.5 × 150) — saves GHS 75 vs monthly
+    termlyPrice: 375,     // GHS per term (2.5 × 150) — saves GHS 75 vs 3 months
     maxStudents: 200,
     durationDays: 30,
     features: {
@@ -92,7 +92,7 @@ export const PLANS = {
     id: 'pro',
     name: 'Pro',
     price: 250,           // GHS per month
-    termlyPrice: 875,     // GHS per term (3.5 × 250) — saves GHS 125 vs monthly
+    termlyPrice: 625,     // GHS per term (2.5 × 250) — saves GHS 125 vs 3 months
     maxStudents: 99999,
     durationDays: 30,
     features: {
@@ -113,7 +113,7 @@ export const PLANS = {
     id: 'premium',
     name: 'Premium',
     price: 400,           // GHS per month
-    termlyPrice: 1400,    // GHS per term (3.5 × 400) — saves GHS 200 vs monthly
+    termlyPrice: 1000,    // GHS per term (2.5 × 400) — saves GHS 200 vs 3 months
     maxStudents: 99999,
     durationDays: 30,
     features: {
@@ -133,7 +133,7 @@ export const PLANS = {
 };
 
 export const BACKUP_ADDON_PRICE         = 100;  // GHS/month
-export const BACKUP_ADDON_TERMLY_PRICE  = 350;  // GHS/term (3.5 × 100) — saves GHS 50
+export const BACKUP_ADDON_TERMLY_PRICE  = 250;  // GHS/term (2.5 × 100) — saves GHS 50 vs 3 months
 
 // ── PLAN FEATURE DESCRIPTIONS ─────────────────────────────────────
 // Plain-language explanation of what each plan includes, shown wherever
@@ -187,16 +187,16 @@ export const PLAN_SUMMARY = {
 export function getPlanPrice(planId, cycle = 'monthly') {
   const plan = PLANS[planId];
   if (!plan || !plan.price) return 0;
-  return cycle === 'termly' ? (plan.termlyPrice || Math.round(plan.price * 3.5)) : plan.price;
+  return cycle === 'termly' ? (plan.termlyPrice || Math.round(plan.price * 2.5)) : plan.price;
 }
 
-// Helper — get termly saving vs paying monthly for 4 months
+// Helper — get termly saving vs paying monthly for a full 3-month term
 export function getTermlySaving(planId) {
   const plan = PLANS[planId];
   if (!plan || !plan.price) return 0;
-  const monthly4 = plan.price * 4;
-  const termly   = plan.termlyPrice || Math.round(plan.price * 3.5);
-  return monthly4 - termly;
+  const monthly3 = plan.price * 3;
+  const termly    = plan.termlyPrice || Math.round(plan.price * 2.5);
+  return monthly3 - termly;
 }
 
 // ── TRIAL MILESTONE CHECK ─────────────────────────────────────────
