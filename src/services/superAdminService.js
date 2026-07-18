@@ -392,7 +392,7 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
   const now          = Date.now();
   const baseDate     = existing.expiresAt > now ? existing.expiresAt : now;
   // Trial plan keeps its fixed 21-day duration; paid plans use the chosen
-  // billing cycle's duration (30 days monthly, ~120 days/1 term termly).
+  // billing cycle's duration (30 days monthly, ~90 days/1 term termly).
   const durationDays = planId === 'trial' ? plan_data.durationDays : billingCycle.durationDays;
   const expiresAt    = baseDate + durationDays * 24 * 60 * 60 * 1000;
 
