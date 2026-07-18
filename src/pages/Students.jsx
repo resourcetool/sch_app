@@ -18,7 +18,7 @@ import {
 import { importStudentsFromExcel, downloadStudentImportTemplate } from '../services/backupService';
 
 // ── EDIT MODAL ────────────────────────────────────────────────────
-function StudentModal({ student, onClose, onSave }) {
+function StudentModal({ student, existingStudents = [], onClose, onSave }) {
   const [form, setForm] = useState(student || {
     firstName: '', lastName: '', dateOfBirth: '', gender: 'Male',
     guardianName: '', guardianPhone: '', address: '', status: 'active',
@@ -28,8 +28,21 @@ function StudentModal({ student, onClose, onSave }) {
 
   const up = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  // Live duplicate check — ignores the student's own record when editing
+  const nameMatch = (form.firstName?.trim() && form.lastName?.trim())
+    ? existingStudents.find(s =>
+        s.id !== student?.id &&
+        s.firstName.trim().toLowerCase() === form.firstName.trim().toLowerCase() &&
+        s.lastName.trim().toLowerCase()  === form.lastName.trim().toLowerCase()
+      )
+    : null;
+
   async function submit(e) {
     e.preventDefault();
+    if (nameMatch && !window.confirm(
+      `A student named "${form.firstName.trim()} ${form.lastName.trim()}" already exists ` +
+      `(code ${nameMatch.studentCode}). Save this as a separate student anyway?`
+    )) return;
     setSaving(true); setError('');
     try { await onSave(form); onClose(); }
     catch (err) { setError(err.message); }
@@ -46,6 +59,12 @@ function StudentModal({ student, onClose, onSave }) {
         <form onSubmit={submit}>
           <div className="modal-body">
             {error && <div className="alert alert-danger" style={{ marginBottom: 10 }}>{error}</div>}
+            {nameMatch && (
+              <div className="alert alert-warning" style={{ marginBottom: 10, fontSize: '.82rem' }}>
+                ⚠ A student named "{form.firstName.trim()} {form.lastName.trim()}" already exists
+                (code {nameMatch.studentCode}). You'll be asked to confirm before saving a duplicate.
+              </div>
+            )}
             <div className="form-grid">
               <div className="form-group">
                 <label>First Name *</label>
@@ -225,10 +244,23 @@ export default function Students() {
     return Object.values(groups).filter(g => g.length > 1);
   })();
 
+  // Live check — does the name currently typed in Quick Add match an
+  // existing student? Shown as an inline warning before they even submit.
+  const qNameMatch = (qFirst.trim() && qLast.trim())
+    ? students.find(s =>
+        s.firstName.trim().toLowerCase() === qFirst.trim().toLowerCase() &&
+        s.lastName.trim().toLowerCase()  === qLast.trim().toLowerCase()
+      )
+    : null;
+
   // ── QUICK ADD ─────────────────────────────────────────────────
   async function handleQuickAdd(e) {
     e.preventDefault();
     if (!qFirst.trim() || !qLast.trim()) return;
+    if (qNameMatch && !window.confirm(
+      `A student named "${qFirst.trim()} ${qLast.trim()}" already exists ` +
+      `(code ${qNameMatch.studentCode}). Add another student with the same name anyway?`
+    )) return;
     setQAdding(true); setError('');
     try {
       const student = await createStudent(
@@ -426,6 +458,16 @@ export default function Students() {
               {qAdding ? '…' : '+ Add'}
             </button>
           </form>
+          {qNameMatch && (
+            <div style={{
+              marginTop: 8, padding: '6px 10px', borderRadius: 6,
+              background: '#fff3e0', color: '#e65100', fontSize: '.76rem', fontWeight: 600,
+            }}>
+              ⚠ A student named "{qFirst.trim()} {qLast.trim()}" already exists (code {qNameMatch.studentCode}
+              {enrollMap[qNameMatch.id] ? `, ${classMap[enrollMap[qNameMatch.id].classId]?.name || 'enrolled'}` : ', not enrolled'}).
+              You'll be asked to confirm before adding a duplicate.
+            </div>
+          )}
           <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
             <span>Press Enter to add and continue. Student is auto-enrolled if a class is selected. Use <strong>+ Full Add</strong> for DOB, guardian, address.</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
@@ -529,6 +571,7 @@ export default function Students() {
       {(modal === 'add' || modal === 'edit') && (
         <StudentModal
           student={modal === 'edit' ? selected : null}
+          existingStudents={students}
           onClose={() => { setModal(null); setSelected(null); }}
           onSave={async (form) => { await handleSave(form); await load(); }}
         />
