@@ -14,10 +14,13 @@
 //   billing, so nothing is ever charged automatically — the school
 //   always actively chooses when (and whether) to pay.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import { useAuth } from '../contexts/AuthContext';
-import { PLANS, daysUntilDelete } from '../services/subscriptionService';
+import {
+  PLANS, daysUntilDelete, BILLING_CYCLES, getPlanPrice, getTermlySaving,
+  PLAN_FEATURE_LIST, PLAN_SUMMARY,
+} from '../services/subscriptionService';
 
 const SUPPORT_PHONE      = '0549548274';
 const SUPPORT_PHONE_INTL = '233549548274';
@@ -33,11 +36,13 @@ export default function SubscriptionExpired() {
   const { subscription, status, plan } = useSubscription();
   const { logout, userProfile } = useAuth();
   const deleteIn = daysUntilDelete(subscription);
+  const [cycle, setCycle] = useState('termly'); // termly is the default, recommended cycle
+  const [expandedPlan, setExpandedPlan] = useState('pro');
 
   const isSuspended  = status === 'suspended';
   const isTrialEnded = status === 'trial_ended';
 
-  const waLink  = `https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I'd like to subscribe to SchoolMS.`;
+  const waLink  = `https://wa.me/${SUPPORT_PHONE_INTL}?text=${encodeURIComponent(`Hello, I'd like to subscribe to SchoolMS — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`;
   const telLink = `tel:+${SUPPORT_PHONE_INTL}`;
 
   const milestoneLabel = isTrialEnded
@@ -117,27 +122,74 @@ export default function SubscriptionExpired() {
 
         {/* Plans — shown for both trial-ended and paid-expired */}
         {!isSuspended && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--navy)', marginBottom: 10 }}>
-              {isTrialEnded ? 'Choose a plan to continue — from GHS 150/month' : 'Renew from GHS 150/month'}
+          <div style={{ marginBottom: 24, textAlign: 'left' }}>
+            <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--navy)', marginBottom: 10, textAlign: 'center' }}>
+              {isTrialEnded ? 'Choose a plan to continue' : 'Choose how to renew'}
             </div>
+
+            {/* Billing cycle toggle — termly is the default/recommended option */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, justifyContent: 'center' }}>
+              {['termly', 'monthly'].map(c => (
+                <button
+                  key={c} type="button" onClick={() => setCycle(c)}
+                  style={{
+                    padding: '8px 18px', borderRadius: 30, cursor: 'pointer',
+                    border: `2px solid ${cycle === c ? 'var(--navy)' : 'var(--border)'}`,
+                    background: cycle === c ? 'var(--navy)' : '#fff',
+                    color: cycle === c ? '#fff' : 'var(--text-mid)',
+                    fontWeight: 700, fontSize: '.8rem',
+                  }}
+                >
+                  {c === 'termly' ? 'Per Term (recommended)' : 'Monthly'}
+                </button>
+              ))}
+            </div>
+            {cycle === 'termly' && (
+              <div style={{ textAlign: 'center', fontSize: '.76rem', color: 'var(--success)', fontWeight: 600, marginBottom: 12 }}>
+                💰 Pay once per term — the 3 months of your term combined into one payment, with a small saving built in
+              </div>
+            )}
+            {cycle === 'monthly' && (
+              <div style={{ textAlign: 'center', fontSize: '.76rem', color: 'var(--text-lt)', marginBottom: 12 }}>
+                Optional — pay every 30 days instead. Switch to termly any time to save.
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {['starter', 'pro', 'premium'].map(planId => {
                 const p = PLANS[planId];
+                const price  = getPlanPrice(planId, cycle);
+                const saving = getTermlySaving(planId);
+                const isOpen = expandedPlan === planId;
                 return (
                   <div key={planId} style={{
                     border: `2px solid ${planId === 'pro' ? 'var(--navy)' : 'var(--border)'}`,
                     borderRadius: 10, padding: '10px 14px',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    background: planId === 'pro' ? '#e3f2fd' : ''
+                    background: planId === 'pro' ? '#e3f2fd' : '',
                   }}>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontWeight: 700, fontSize: '.85rem' }}>{p.name}</div>
-                      <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
-                        {planId === 'starter' ? 'Up to 200 students' : planId === 'pro' ? 'Unlimited + Analytics' : 'Unlimited + Backup'}
+                    <div
+                      onClick={() => setExpandedPlan(isOpen ? null : planId)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '.85rem' }}>{p.name}</div>
+                        <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>{PLAN_SUMMARY[planId]}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 10 }}>
+                        <div style={{ fontWeight: 800, color: 'var(--navy)' }}>
+                          GHS {price}<span style={{ fontWeight: 400, fontSize: '.75rem' }}>{cycle === 'termly' ? '/term' : '/mo'}</span>
+                        </div>
+                        {cycle === 'termly' && saving > 0 && (
+                          <div style={{ fontSize: '.68rem', color: 'var(--success)', fontWeight: 700 }}>Save GHS {saving}</div>
+                        )}
+                        <div style={{ fontSize: '.68rem', color: 'var(--text-lt)', marginTop: 2 }}>{isOpen ? '▲ hide' : '▼ details'}</div>
                       </div>
                     </div>
-                    <div style={{ fontWeight: 800, color: 'var(--navy)' }}>GHS {p.price}<span style={{ fontWeight: 400, fontSize: '.75rem' }}>/mo</span></div>
+                    {isOpen && (
+                      <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: '.76rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>
+                        {(PLAN_FEATURE_LIST[planId] || []).map(f => <li key={f}>{f}</li>)}
+                      </ul>
+                    )}
                   </div>
                 );
               })}
