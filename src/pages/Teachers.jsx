@@ -14,7 +14,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSchool }    from '../contexts/SchoolContext';
 import { useAuth }      from '../contexts/AuthContext';
 import { v4 as uuidv4 } from 'uuid';
-import { writeRecord }  from '../services/syncService';
+import { writeRecord, deleteRecord } from '../services/syncService';
 import { idbGetAll }    from '../services/indexedDB';
 import { createTeacherAccount } from '../services/teacherAuthService';
 import { logActivity }  from '../services/superAdminService';
@@ -326,20 +326,27 @@ export default function Teachers() {
     finally { setQAdding(false); }
   }
 
+  // Removing a teacher is now a PERMANENT hard delete — the teacher record
+  // and their linked login profile (users doc) are deleted from Firestore
+  // entirely. This cannot be undone. (Previously this soft-deleted by
+  // setting status to 'inactive'; that behavior has been replaced per
+  // admin requirements.) Note: the underlying Firebase Auth credential
+  // itself can't be deleted from client code (no Admin SDK here) — but
+  // without a users profile the account can no longer sign in to the app.
   async function handleRemoveTeacher(teacher) {
     if (!window.confirm(
-      `Remove ${teacher.firstName} ${teacher.lastName}?\n\nThis deactivates their account. They will no longer be able to log in. Their score records are preserved.`
+      `Permanently delete ${teacher.firstName} ${teacher.lastName}?\n\n` +
+      `This PERMANENTLY removes the teacher and their login profile from ` +
+      `the system. This cannot be undone.`
     )) return;
     setError('');
     try {
-      await writeRecord('teachers', teacher.id, {
-        ...teacher, status: 'inactive', deactivatedAt: Date.now(),
-      }, schoolId);
+      await deleteRecord('teachers', teacher.id);
 
       const q    = query(collection(db, 'users'), where('teacherId', '==', teacher.id));
       const snap = await getDocs(q);
       if (!snap.empty) {
-        await updateDoc(snap.docs[0].ref, { status: 'inactive', role: 'inactive_teacher' });
+        await deleteRecord('users', snap.docs[0].id);
       }
 
       logActivity(schoolId, userProfile?.id || '', userProfile?.email || '', 'teacher_removed', {
@@ -408,7 +415,7 @@ export default function Teachers() {
             </div>
           ))}
           <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
-            Removing deactivates the teacher's login and preserves their historical records.
+            Removing permanently deletes the teacher and their login profile from the system.
           </div>
         </div>
       )}
@@ -494,11 +501,7 @@ export default function Teachers() {
                       </td>
                       <td>
                         <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(t); setShowModal(true); }}>Edit</button>
-                        {t.status !== 'inactive' ? (
-                          <button className="btn btn-danger btn-sm" onClick={() => handleRemoveTeacher(t)}>Remove</button>
-                        ) : (
-                          <span className="badge badge-neutral" style={{ fontSize: '.72rem' }}>Inactive</span>
-                        )}
+                        <button className="btn btn-danger btn-sm" onClick={() => handleRemoveTeacher(t)}>Remove</button>
                       </td>
                     </tr>
                   );
