@@ -11,6 +11,7 @@
 // - All existing tabs (Academic Year, Grading Scale, Promotion Rules) preserved.
 
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useSchool } from '../contexts/SchoolContext';
 import { useAuth }  from '../contexts/AuthContext';
 import { defaultGradingScale }         from '../services/scoreService';
@@ -240,7 +241,12 @@ function SubscriptionTab({ subscription }) {
 
       {/* ── PRICING COMPARISON ── */}
       <div className="card" style={{ maxWidth: 680 }}>
-        <div className="card-header"><span className="card-title">All Plans — What Each One Includes</span></div>
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="card-title">All Plans — What Each One Includes</span>
+          <Link to="/pricing" style={{ fontSize: '.78rem', color: 'var(--navy)', fontWeight: 700, textDecoration: 'none' }}>
+            View full Pricing page →
+          </Link>
+        </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           {['termly', 'monthly'].map(c => (
