@@ -17,14 +17,17 @@ import {
   isSuperAdmin, getAllSchools, getAllCodes, getAllAccessRequests,
   createRegistrationCode, renewSubscription, suspendSchool,
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
-  addSuperAdminNote, getSchoolDetails, deleteAccessRequest,
+  addSuperAdminNote, getSchoolDetails, getSchoolAdminProfiles, deleteAccessRequest,
   getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool,
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
   sendSuperAdminEmail, broadcastEmailToAllSchools,
   getSchoolActivityLog, getPendingDeletions,
   cancelDeletionRequest, logActivity,
 } from '../services/superAdminService';
-import { PLANS } from '../services/subscriptionService';
+import {
+  PLANS, BILLING_CYCLES, getPlanPrice, PLAN_FEATURE_LIST, PLAN_SUMMARY,
+  BACKUP_ADDON_PRICE, BACKUP_ADDON_TERMLY_PRICE,
+} from '../services/subscriptionService';
 import { getSubscriptionStatus, daysRemaining } from '../services/subscriptionService';
 import { createStudent, enrollStudent, updateStudent, updateEnrollmentStatus } from '../services/studentService';
 import { createTeacherAccount } from '../services/teacherAuthService';
@@ -177,7 +180,8 @@ function GenerateCodeModal({ onClose, onGenerated, prefilledSchool = '', prefill
 
 function RenewModal({ school, onClose, onRenewed }) {
   const [form, setForm] = useState({
-    plan:        school.subscription?.plan    || 'pro',
+    plan:        school.subscription?.plan  || 'pro',
+    cycle:       school.subscription?.billingCycle || 'termly', // termly is the default/recommended cycle
     paymentRef:  '',
     amountPaid:  '',
     notes:       '',
@@ -192,7 +196,10 @@ function RenewModal({ school, onClose, onRenewed }) {
     setLoading(true);
     setError('');
     try {
-      await renewSubscription(school.id, form.plan, form.paymentRef, Number(form.amountPaid), form.notes, form.backupAddon);
+      await renewSubscription(
+        school.id, form.plan, form.paymentRef, Number(form.amountPaid),
+        form.notes, form.backupAddon, form.cycle,
+      );
       onRenewed && onRenewed();
       onClose();
     } catch (err) {
@@ -202,13 +209,17 @@ function RenewModal({ school, onClose, onRenewed }) {
     }
   }
 
-  const planData       = PLANS[form.plan];
-  const backupPrice    = form.backupAddon && form.plan !== 'premium' ? 100 : 0;
-  const expectedAmount = planData ? planData.price + backupPrice : 0;
+  const planData     = PLANS[form.plan];
+  const billing      = BILLING_CYCLES[form.cycle] || BILLING_CYCLES.termly;
+  const planPrice    = getPlanPrice(form.plan, form.cycle);
+  const backupPrice  = form.backupAddon && form.plan !== 'premium'
+    ? (form.cycle === 'termly' ? BACKUP_ADDON_TERMLY_PRICE : BACKUP_ADDON_PRICE)
+    : 0;
+  const expectedAmount = planData ? planPrice + backupPrice : 0;
 
   return (
     <div className="modal-overlay">
-      <div className="modal">
+      <div className="modal modal-lg">
         <div className="modal-header">
           <span className="modal-title">Renew / Upgrade: {school.name}</span>
           <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
@@ -216,15 +227,62 @@ function RenewModal({ school, onClose, onRenewed }) {
         <form onSubmit={handleRenew}>
           <div className="modal-body">
             {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
+
+            {/* Billing cycle — termly is the recommended default; monthly is optional */}
+            <div className="form-group full" style={{ marginBottom: 14 }}>
+              <label>How will this school pay? *</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['termly', 'monthly'].map(c => (
+                  <button
+                    key={c} type="button"
+                    onClick={() => setForm(f => ({ ...f, cycle: c }))}
+                    style={{
+                      flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+                      border: `2px solid ${form.cycle === c ? 'var(--navy)' : 'var(--border)'}`,
+                      background: form.cycle === c ? 'var(--navy)' : '#fff',
+                      color: form.cycle === c ? '#fff' : 'var(--text-mid)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: '.85rem' }}>
+                      {c === 'termly' ? 'Per Term (recommended)' : 'Monthly'}
+                    </div>
+                    <div style={{ fontSize: '.7rem', opacity: .85 }}>
+                      {c === 'termly'
+                        ? 'Pay once, ~every 4 months — saves half a month'
+                        : 'Pay every 30 days — no discount'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6 }}>
+                Termly is the main billing option — it matches how schools already budget per term.
+                Monthly stays available for schools that specifically prefer it; it's never forced.
+              </div>
+            </div>
+
             <div className="form-grid">
               <div className="form-group full">
                 <label>Plan *</label>
                 <select value={form.plan} onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}>
-                  <option value="starter">Starter — GHS 150/month</option>
-                  <option value="pro">Pro — GHS 250/month</option>
-                  <option value="premium">Premium — GHS 400/month (backup included)</option>
+                  <option value="starter">Starter — GHS {getPlanPrice('starter', form.cycle)} {billing.label === 'Monthly' ? '/month' : '/term'}</option>
+                  <option value="pro">Pro — GHS {getPlanPrice('pro', form.cycle)} {billing.label === 'Monthly' ? '/month' : '/term'}</option>
+                  <option value="premium">Premium — GHS {getPlanPrice('premium', form.cycle)} {billing.label === 'Monthly' ? '/month' : '/term'} (backup included)</option>
                 </select>
               </div>
+
+              {/* Clear feature breakdown so the right plan is obvious */}
+              <div className="form-group full" style={{
+                background: 'var(--surface2)', borderRadius: 8, padding: '10px 14px', marginTop: -6,
+              }}>
+                <div style={{ fontSize: '.78rem', color: 'var(--text-mid)', marginBottom: 6, fontStyle: 'italic' }}>
+                  {PLAN_SUMMARY[form.plan]}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: '.78rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>
+                  {(PLAN_FEATURE_LIST[form.plan] || []).map(f => <li key={f}>{f}</li>)}
+                </ul>
+              </div>
+
               {form.plan !== 'premium' && (
                 <div className="form-group full">
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -233,7 +291,7 @@ function RenewModal({ school, onClose, onRenewed }) {
                       checked={form.backupAddon}
                       onChange={e => setForm(f => ({ ...f, backupAddon: e.target.checked }))}
                     />
-                    Add Backup Add-on (+GHS 100/month)
+                    Add Backup Add-on (+GHS {form.cycle === 'termly' ? BACKUP_ADDON_TERMLY_PRICE : BACKUP_ADDON_PRICE} {form.cycle === 'termly' ? '/term' : '/month'})
                   </label>
                 </div>
               )}
@@ -268,7 +326,10 @@ function RenewModal({ school, onClose, onRenewed }) {
               background: 'var(--surface2)', borderRadius: 8,
               padding: '10px 14px', fontSize: '.82rem', marginTop: 8,
             }}>
-              Expected payment: <strong>GHS {expectedAmount}</strong> · Extends subscription by 30 days
+              Expected payment: <strong>GHS {expectedAmount}</strong> · Extends subscription by{' '}
+              <strong>{billing.durationDays} days</strong> ({form.cycle === 'termly' ? '~1 school term' : '1 month'}).
+              If not renewed again before this period plus a 7-day grace window, the school's
+              access is automatically blocked until payment resumes (data is never deleted).
             </div>
           </div>
           <div className="modal-footer">
@@ -290,7 +351,19 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
   const [note,      setNote]      = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [error,     setError]     = useState('');
+  const [adminProfiles, setAdminProfiles] = useState([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(true);
   const sub = school.subscription;
+
+  useEffect(() => {
+    let active = true;
+    setLoadingAdmins(true);
+    getSchoolAdminProfiles(school.id)
+      .then(profiles => { if (active) setAdminProfiles(profiles); })
+      .catch(err => console.warn('Could not load school admin profiles:', err.message))
+      .finally(() => { if (active) setLoadingAdmins(false); });
+    return () => { active = false; };
+  }, [school.id]);
 
   async function handleAddNote() {
     if (!note.trim()) return;
@@ -352,12 +425,17 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
             <div>
               <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 10 }}>School Info</div>
               {[
-                ['Code',          school.code],
-                ['Address',       school.address      || '—'],
-                ['Phone',         school.phone        || '—'],
-                ['Email',         school.email        || '—'],
-                ['Academic Year', school.academicYear],
-                ['Current Term',  `Term ${school.currentTerm}`],
+                ['School ID',      school.id],
+                ['Code',           school.code],
+                ['Address',        school.address      || '—'],
+                ['Phone',          school.phone        || '—'],
+                ['Email',          school.email        || '—'],
+                ['Academic Year',  school.academicYear],
+                ['Current Term',   `Term ${school.currentTerm}`],
+                ['Registered On',  school.createdAt ? new Date(school.createdAt).toLocaleString() : '—'],
+                ['Last Admin Login', school.lastLoginAt ? new Date(school.lastLoginAt).toLocaleString() : 'Never logged in'],
+                ['Grading Scale',   school.gradingScale   ? '✓ Configured' : 'Default'],
+                ['Promotion Rules', school.promotionRules ? '✓ Configured' : 'Default'],
               ].map(([k, v]) => (
                 <div key={k} style={{
                   display: 'flex', gap: 8, fontSize: '.83rem',
@@ -394,6 +472,42 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                 <p style={{ color: 'var(--text-lt)', fontSize: '.84rem' }}>No subscription found</p>
               )}
             </div>
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 10 }}>
+              Registered Admin / Staff Accounts
+            </div>
+            {loadingAdmins ? (
+              <p style={{ fontSize: '.82rem', color: 'var(--text-lt)' }}>Loading…</p>
+            ) : adminProfiles.length === 0 ? (
+              <p style={{ fontSize: '.82rem', color: 'var(--text-lt)' }}>No login accounts found for this school.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Last Login</th></tr>
+                  </thead>
+                  <tbody>
+                    {adminProfiles.map(p => (
+                      <tr key={p.id}>
+                        <td style={{ fontWeight: 600, fontSize: '.82rem' }}>{p.firstName} {p.lastName}</td>
+                        <td style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>{p.email || '—'}</td>
+                        <td style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>{p.phone || '—'}</td>
+                        <td>
+                          <span className={`badge badge-${p.role === 'admin' ? 'info' : 'neutral'}`} style={{ fontSize: '.7rem' }}>
+                            {p.role || '—'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '.78rem', color: 'var(--text-lt)' }}>
+                          {p.lastLoginAt ? new Date(p.lastLoginAt).toLocaleString() : 'Never'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {sub?.paymentHistory?.length > 0 && (
@@ -1525,9 +1639,21 @@ function SchoolDataBrowser({ schools }) {
   const selectedSchool = schools.find(s => s.id === selectedSchoolId);
 
   // ── ADD STUDENT (super admin, on behalf of the selected school) ──
+  // Live duplicate check for the name currently typed in the quick-add form
+  const sNameMatch = (sFirst.trim() && sLast.trim())
+    ? (data?.students || []).find(s =>
+        s.firstName.trim().toLowerCase() === sFirst.trim().toLowerCase() &&
+        s.lastName.trim().toLowerCase()  === sLast.trim().toLowerCase()
+      )
+    : null;
+
   async function handleAddStudent(e) {
     e.preventDefault();
     if (!sFirst.trim() || !sLast.trim() || !selectedSchoolId) return;
+    if (sNameMatch && !window.confirm(
+      `A student named "${sFirst.trim()} ${sLast.trim()}" already exists in this school ` +
+      `(code ${sNameMatch.studentCode}). Add another student with the same name anyway?`
+    )) return;
     setSAdding(true); setSError('');
     try {
       const student = await createStudent(
@@ -1813,6 +1939,15 @@ function SchoolDataBrowser({ schools }) {
                   {sAdding ? '…' : '+ Add Student'}
                 </button>
               </form>
+              {sNameMatch && (
+                <div style={{
+                  marginTop: 8, padding: '6px 10px', borderRadius: 6,
+                  background: '#fff3e0', color: '#e65100', fontSize: '.76rem', fontWeight: 600,
+                }}>
+                  ⚠ A student named "{sFirst.trim()} {sLast.trim()}" already exists in this school
+                  (code {sNameMatch.studentCode}). You'll be asked to confirm before adding a duplicate.
+                </div>
+              )}
               {(data?.classes || []).length === 0 && (
                 <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 6 }}>
                   This school has no classes yet, so the student will be added without enrollment.
