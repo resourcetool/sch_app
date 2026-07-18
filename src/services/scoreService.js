@@ -247,7 +247,74 @@ export async function generateResults(schoolId, classId, academicYear, term, gra
   return savedResults;
 }
 
-// ── READ HELPERS ─────────────────────────────────────────────────
+// ── SCORE ENTRY STATUS ──────────────────────────────────────────────
+// Lets admin see, at a glance, which subjects (and which teacher) have
+// actually entered scores for a class/term — and how complete that entry
+// is (a score only counts as "complete" if BOTH class score and exam
+// score are filled in). This is also used to gate report generation so
+// admins/teachers can't accidentally generate/print reports built on
+// missing data.
+export async function getScoreEntryStatus(schoolId, classId, academicYear, term) {
+  const allEnrollments = await idbGetAll('enrollments', 'schoolId', schoolId);
+  const enrollments = allEnrollments.filter(e =>
+    e.classId === classId && e.academicYear === academicYear &&
+    e.term === term && e.status === 'active'
+  );
+  const totalStudents = enrollments.length;
+
+  const allSubjects = await idbGetAll('subjects', 'schoolId', schoolId);
+  const allClasses  = await idbGetAll('classes',  'schoolId', schoolId);
+  const allTeachers = await idbGetAll('teachers', 'schoolId', schoolId);
+  const thisClass   = allClasses.find(c => c.id === classId);
+
+  const classSubjects = allSubjects.filter(s =>
+    s.classIds?.includes(classId) || thisClass?.subjectIds?.includes(s.id)
+  );
+
+  const scores = navigator.onLine
+    ? await getScoresFromFirestore(schoolId, classId, academicYear, term)
+    : await getScores(schoolId, { classId, academicYear, term });
+
+  function isComplete(score) {
+    return score &&
+      score.classScore !== undefined && score.classScore !== null && score.classScore !== '' &&
+      score.examScore  !== undefined && score.examScore  !== null && score.examScore  !== '';
+  }
+
+  const subjects = classSubjects.map(subject => {
+    const subjectScores = scores.filter(s => s.subjectId === subject.id);
+    const entered  = subjectScores.filter(isComplete).length;
+    const teacher  = allTeachers.find(t =>
+      t.assignedSubjects?.includes(subject.id) && t.assignedClasses?.includes(classId)
+    );
+    return {
+      subjectId:   subject.id,
+      subjectName: subject.name,
+      teacherName: teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Unassigned',
+      teacherId:   teacher?.id || null,
+      entered,
+      total:       totalStudents,
+      started:     subjectScores.length > 0,
+      complete:    totalStudents > 0 && entered >= totalStudents,
+    };
+  });
+
+  const totalPossible   = subjects.length * totalStudents;
+  const totalEntered    = subjects.reduce((sum, s) => sum + s.entered, 0);
+  const percentComplete = totalPossible > 0 ? Math.round((totalEntered / totalPossible) * 100) : 0;
+  const lastScoreUpdate = scores.reduce((max, s) => Math.max(max, s.updatedAt || 0), 0);
+
+  return {
+    totalStudents,
+    subjects,
+    percentComplete,
+    allComplete:   subjects.length > 0 && subjects.every(s => s.complete),
+    noneStarted:   subjects.length === 0 || subjects.every(s => !s.started),
+    lastScoreUpdate,
+  };
+}
+
+
 
 export async function getResultForEnrollment(schoolId, enrollmentId) {
   const all = await idbGetAll('results', 'schoolId', schoolId);
