@@ -19,12 +19,19 @@ const COMMON_SUBJECTS = [
 ];
 
 function EditModal({ subject, classes, onClose, onSave }) {
+  // Initial selection is the UNION of both directions — classes already
+  // linked via subject.classIds, PLUS any class that links back to this
+  // subject via its own subjectIds (assigned from the Classes page). This
+  // way the toggle grid always reflects reality, not just this one side.
+  const reciprocalClassIds = classes.filter(c => c.subjectIds?.includes(subject.id)).map(c => c.id);
+  const initialClassIds = Array.from(new Set([...(subject.classIds || []), ...reciprocalClassIds]));
+
   const [form, setForm] = useState({
     name:          subject.name,
     code:          subject.code          || '',
     maxClassScore: subject.maxClassScore ?? 30,
     maxExamScore:  subject.maxExamScore  ?? 70,
-    classIds:      subject.classIds      || [],
+    classIds:      initialClassIds,
     description:   subject.description  || '',
   });
   const [saving, setSaving] = useState(false);
@@ -184,6 +191,22 @@ export default function Subjects() {
     };
     if (!data.id) record.createdAt = Date.now();
     await writeRecord('subjects', id, record, schoolId);
+
+    // Keep the reverse link in sync — every class's own subjectIds array is
+    // updated to match what was just chosen here, so a class assigned a
+    // subject from THIS page also shows it correctly on the Classes page
+    // (and vice versa), no matter which page someone edits from next time.
+    for (const c of classes) {
+      const shouldHave = record.classIds.includes(c.id);
+      const currentlyHas = c.subjectIds?.includes(id) || false;
+      if (shouldHave !== currentlyHas) {
+        const nextSubjectIds = shouldHave
+          ? [...(c.subjectIds || []), id]
+          : (c.subjectIds || []).filter(sid => sid !== id);
+        await writeRecord('classes', c.id, { ...c, subjectIds: nextSubjectIds, updatedAt: Date.now() }, schoolId);
+      }
+    }
+
     await refresh();
   }
 
@@ -313,7 +336,12 @@ export default function Subjects() {
               </thead>
               <tbody>
                 {subjects.map((s, i) => {
-                  const assigned = classes.filter(c => s.classIds?.includes(c.id));
+                  // Checks both directions a subject can be linked to a class:
+                  // subject.classIds (set here, from the Subjects page) OR
+                  // class.subjectIds (set from the Classes page). This keeps
+                  // both pages showing the same, current picture regardless
+                  // of which page the assignment was made from.
+                  const assigned = classes.filter(c => s.classIds?.includes(c.id) || c.subjectIds?.includes(s.id));
                   const total    = (s.maxClassScore || 0) + (s.maxExamScore || 0);
                   return (
                     <tr key={s.id}>
