@@ -3,7 +3,7 @@
 // PSYCHOLOGY TECHNIQUES USED:
 //
 // 1. PRICE ANCHORING — Premium shown first and largest. The brain anchors
-//    to GHS 1,400 first, making GHS 875 feel cheap by comparison.
+//    to GHS 1,000 first, making GHS 625 feel cheap by comparison.
 //
 // 2. DECOY EFFECT — Starter exists purely to make Pro look like the
 //    obvious choice. It's close in price but missing key features.
@@ -17,8 +17,8 @@
 // 4. SOCIAL PROOF + URGENCY — "X schools in Ghana already using this"
 //    and "Trial spots limited this term" creates FOMO and herd behaviour.
 //
-// 5. THE CHARM PRICE — GHS 875 not GHS 900. GHS 525 not GHS 600.
-//    Left-digit effect: the brain reads 875 as "800-something" not "900".
+// 5. THE CHARM PRICE — GHS 625 not GHS 650. GHS 375 not GHS 400.
+//    Left-digit effect: the brain reads 625 as "600-something" not "650".
 //
 // 6. EFFORT JUSTIFICATION — The cost calculator makes the school do
 //    mental arithmetic. When they type their own numbers and see the
@@ -81,7 +81,7 @@ function ROICalculator() {
   const teacherCostPerTerm = teachers * hrsPerTeacher * 3 * hourlyWage; // 3 terms/year × hrs × wage
   const paperCostPerTerm   = Math.round(students * 1.5);  // ~GHS 1.50 per student for report paper/ink
   const totalWastedPerTerm = teacherCostPerTerm + paperCostPerTerm;
-  const schoolmsProTermly  = 875;
+  const schoolmsProTermly  = 625;
   const netSavingPerTerm   = totalWastedPerTerm - schoolmsProTermly;
 
   return (
@@ -263,7 +263,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
           )}
           {cycle === 'monthly' && (
             <div style={{ fontSize: '.72rem', color: '#aaa', marginTop: 6 }}>
-              or GHS {plan.termlyPrice || Math.round(plan.price * 3.5)}/term and save GHS {saving}
+              or GHS {plan.termlyPrice || Math.round(plan.price * 2.5)}/term and save GHS {saving}
             </div>
           )}
         </div>
