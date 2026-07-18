@@ -16,6 +16,10 @@ import { useAuth }  from '../contexts/AuthContext';
 import { defaultGradingScale }         from '../services/scoreService';
 import { requestAccountDeletion }      from '../services/superAdminService';
 import { useSubscription }             from '../contexts/SubscriptionContext';
+import {
+  PLANS, BILLING_CYCLES, getPlanPrice, getTermlySaving,
+  PLAN_FEATURE_LIST, PLAN_SUMMARY, daysRemaining,
+} from '../services/subscriptionService';
 import { DEFAULT_PROMOTION_RULES } from '../services/promotionService';
 
 // ── ACCOUNT DELETION PANEL ───────────────────────────────────────
@@ -153,6 +157,169 @@ function AccountDeletionPanel({ school, schoolId, subscription }) {
   );
 }
 
+// ── SUBSCRIPTION & PRICING TAB ──────────────────────────────────────
+// Lets the admin see, right on their own Settings page, exactly what
+// plan they're on, how much time is left, and a clear side-by-side of
+// what every plan includes — so upgrading/renewing is an informed
+// choice, not a guess. Termly is shown as the recommended cycle;
+// monthly stays available and is never forced.
+const STATUS_LABELS = {
+  active:    { label: 'Active',          color: '#27AE60', bg: '#e8f8f0' },
+  trial:     { label: 'Free Trial',      color: '#2980b9', bg: '#e3f2fd' },
+  expiring:  { label: 'Expiring Soon',   color: '#f5a623', bg: '#fff8e1' },
+  grace:     { label: 'Grace Period',    color: '#e67e22', bg: '#fdf0e2' },
+  expired:   { label: 'Expired',         color: '#e74c3c', bg: '#fce4ec' },
+  suspended: { label: 'Suspended',       color: '#8e44ad', bg: '#f3e5f5' },
+};
+
+function SubscriptionTab({ subscription }) {
+  const [cycle, setCycle] = useState('termly'); // termly is the default, recommended cycle
+  if (!subscription) return <div className="card"><p>Loading subscription…</p></div>;
+
+  const planId    = subscription.plan || 'trial';
+  const planData  = PLANS[planId];
+  const isTrial   = planId === 'trial';
+  const days      = daysRemaining(subscription);
+  const statusKey = isTrial ? 'trial' : (subscription.status || 'active');
+  const statusUi  = STATUS_LABELS[statusKey] || STATUS_LABELS.active;
+  const activeCycle = subscription.billingCycle || 'monthly';
+
+  return (
+    <div>
+      {/* ── CURRENT PLAN ── */}
+      <div className="card" style={{ maxWidth: 680, marginBottom: 16 }}>
+        <div className="card-header"><span className="card-title">Your Current Plan</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--navy)' }}>{planData?.name || planId}</div>
+            <div style={{ fontSize: '.82rem', color: 'var(--text-lt)', marginTop: 2 }}>
+              {isTrial ? 'Free trial' : `Billed ${activeCycle === 'termly' ? 'per term' : 'monthly'}`}
+            </div>
+          </div>
+          <span style={{
+            background: statusUi.bg, color: statusUi.color, fontWeight: 700, fontSize: '.78rem',
+            padding: '5px 14px', borderRadius: 20,
+          }}>
+            {statusUi.label}
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginTop: 16 }}>
+          <div>
+            <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Days Remaining</div>
+            <div style={{ fontWeight: 700, fontSize: '.95rem' }}>{days > 0 ? `${days} day${days !== 1 ? 's' : ''}` : 'Expired'}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Expires On</div>
+            <div style={{ fontWeight: 700, fontSize: '.95rem' }}>
+              {subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString('en-GH', { dateStyle: 'long' }) : '—'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Backup Add-on</div>
+            <div style={{ fontWeight: 700, fontSize: '.95rem' }}>
+              {planData?.features?.backup || subscription.backupAddon ? '✓ Included' : '✗ Not active'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Analytics</div>
+            <div style={{ fontWeight: 700, fontSize: '.95rem' }}>
+              {planData?.features?.analytics ? '✓ Included' : '✗ Not on this plan'}
+            </div>
+          </div>
+        </div>
+
+        {(statusKey === 'expiring' || statusKey === 'grace' || statusKey === 'expired' || isTrial) && (
+          <div style={{ marginTop: 16, padding: '10px 14px', background: 'var(--surface2)', borderRadius: 8, fontSize: '.82rem' }}>
+            {isTrial
+              ? 'Ready to continue after your trial? Pick a plan below and message us on WhatsApp to activate it.'
+              : 'Renewing? Pick a plan and cycle below, then message us on WhatsApp with your MoMo reference.'}
+          </div>
+        )}
+      </div>
+
+      {/* ── PRICING COMPARISON ── */}
+      <div className="card" style={{ maxWidth: 680 }}>
+        <div className="card-header"><span className="card-title">All Plans — What Each One Includes</span></div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          {['termly', 'monthly'].map(c => (
+            <button
+              key={c} type="button" onClick={() => setCycle(c)}
+              style={{
+                padding: '8px 18px', borderRadius: 30, cursor: 'pointer',
+                border: `2px solid ${cycle === c ? 'var(--navy)' : 'var(--border)'}`,
+                background: cycle === c ? 'var(--navy)' : '#fff',
+                color: cycle === c ? '#fff' : 'var(--text-mid)',
+                fontWeight: 700, fontSize: '.8rem',
+              }}
+            >
+              {c === 'termly' ? 'Per Term (recommended)' : 'Monthly'}
+            </button>
+          ))}
+        </div>
+        {cycle === 'termly' ? (
+          <div style={{ fontSize: '.76rem', color: 'var(--success)', fontWeight: 600, marginBottom: 12 }}>
+            💰 One payment covers the whole term (3 months) — with a small saving built in vs paying monthly.
+          </div>
+        ) : (
+          <div style={{ fontSize: '.76rem', color: 'var(--text-lt)', marginBottom: 12 }}>
+            Optional — pay every 30 days instead. Switch to termly any time to save.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {['starter', 'pro', 'premium'].map(pId => {
+            const p      = PLANS[pId];
+            const price  = getPlanPrice(pId, cycle);
+            const saving = getTermlySaving(pId);
+            const isCurrent = pId === planId;
+            return (
+              <div key={pId} style={{
+                border: `2px solid ${isCurrent ? '#27AE60' : pId === 'pro' ? 'var(--navy)' : 'var(--border)'}`,
+                borderRadius: 10, padding: '12px 16px',
+                background: isCurrent ? '#e8f8f0' : pId === 'pro' ? '#e3f2fd' : '',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {p.name}
+                      {isCurrent && <span style={{ fontSize: '.66rem', background: '#27AE60', color: '#fff', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>YOUR PLAN</span>}
+                    </div>
+                    <div style={{ fontSize: '.76rem', color: 'var(--text-lt)', marginTop: 2 }}>{PLAN_SUMMARY[pId]}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: 800, color: 'var(--navy)' }}>
+                      GHS {price}<span style={{ fontWeight: 400, fontSize: '.75rem' }}>{cycle === 'termly' ? '/term' : '/mo'}</span>
+                    </div>
+                    {cycle === 'termly' && saving > 0 && (
+                      <div style={{ fontSize: '.68rem', color: 'var(--success)', fontWeight: 700 }}>Save GHS {saving}</div>
+                    )}
+                  </div>
+                </div>
+                <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: '.78rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>
+                  {(PLAN_FEATURE_LIST[pId] || []).map(f => <li key={f}>{f}</li>)}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop: 16, textAlign: 'center' }}>
+          <a
+            href={`https://wa.me/233549548274?text=${encodeURIComponent(`Hello, I'd like to renew/change my SchoolMS plan — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`}
+            target="_blank" rel="noreferrer"
+            className="btn btn-success"
+            style={{ textDecoration: 'none' }}
+          >
+            📱 Message Us on WhatsApp to Renew or Change Plan
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { school, updateSchool, schoolId } = useSchool();
   const { subscription } = useSubscription();
@@ -264,6 +431,7 @@ export default function Settings() {
         <button className={`tab${tab === 'academic'? ' active' : ''}`} onClick={() => setTab('academic')}>Academic Year</button>
         <button className={`tab${tab === 'grading' ? ' active' : ''}`} onClick={() => setTab('grading')}>Grading Scale</button>
         <button className={`tab${tab === 'promotion'?' active' : ''}`} onClick={() => setTab('promotion')}>Promotion Rules</button>
+        <button className={`tab${tab === 'subscription' ? ' active' : ''}`} onClick={() => setTab('subscription')}>💳 Subscription &amp; Pricing</button>
         <button className={`tab${tab === 'account' ? ' active' : ''}`} onClick={() => setTab('account')} style={{ color: tab === 'account' ? '#ef5350' : '' }}>⚠ Account</button>
       </div>
 
@@ -525,6 +693,11 @@ export default function Settings() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* ── SUBSCRIPTION & PRICING ── */}
+      {tab === 'subscription' && (
+        <SubscriptionTab subscription={subscription} />
       )}
 
       {/* ── ACCOUNT (DELETION) ── */}
