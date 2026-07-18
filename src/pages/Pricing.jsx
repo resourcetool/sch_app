@@ -44,6 +44,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { PLANS, getPlanPrice, getTermlySaving } from '../services/subscriptionService';
+import { useAuth } from '../contexts/AuthContext';
 
 const WHATSAPP_BASE = 'https://wa.me/233549548274';
 const wa = (msg) => `${WHATSAPP_BASE}?text=${encodeURIComponent(msg)}`;
@@ -305,6 +306,10 @@ function PlanCard({ plan, cycle, isDecoy }) {
 // ── MAIN PAGE ─────────────────────────────────────────────────────
 export default function Pricing() {
   const [cycle, setCycle] = useState('termly');
+  const { user, userProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+  const backTo    = user ? (isTeacher ? '/scores' : '/dashboard') : '/login';
+  const backLabel = user ? '← Back to Dashboard' : '← Back';
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f9fc', fontFamily: 'Arial, sans-serif' }}>
@@ -317,16 +322,18 @@ export default function Pricing() {
         boxShadow: '0 2px 12px rgba(0,0,0,.2)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Link to="/login" style={{ color: 'rgba(255,255,255,.6)', fontSize: '.82rem', textDecoration: 'none' }}>← Back</Link>
+          <Link to={backTo} style={{ color: 'rgba(255,255,255,.6)', fontSize: '.82rem', textDecoration: 'none' }}>{backLabel}</Link>
           <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,.2)' }} />
           <span style={{ color: '#fff', fontWeight: 800, fontSize: '.95rem' }}>🏫 SchoolMS</span>
         </div>
-        <Link to="/trial" style={{
-          background: '#E94560', color: '#fff', padding: '8px 18px',
-          borderRadius: 8, fontWeight: 700, fontSize: '.82rem', textDecoration: 'none',
-        }}>
-          Start Free Trial
-        </Link>
+        {!user && (
+          <Link to="/trial" style={{
+            background: '#E94560', color: '#fff', padding: '8px 18px',
+            borderRadius: 8, fontWeight: 700, fontSize: '.82rem', textDecoration: 'none',
+          }}>
+            Start Free Trial
+          </Link>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════
@@ -668,11 +675,12 @@ export default function Pricing() {
         <div style={{ marginBottom: 8, fontWeight: 700, color: '#666' }}>SchoolMS — Built for Ghana's Schools</div>
         <div>📱 WhatsApp: 0549548274 &nbsp;·&nbsp; ✉ schoolpilot132@gmail.com</div>
         <div style={{ marginTop: 16, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link to="/login"    style={{ color: '#aaa', textDecoration: 'none' }}>Sign In</Link>
-          <Link to="/trial"    style={{ color: '#aaa', textDecoration: 'none' }}>Free Trial</Link>
+          {!user && <Link to="/login"    style={{ color: '#aaa', textDecoration: 'none' }}>Sign In</Link>}
+          {!user && <Link to="/trial"    style={{ color: '#aaa', textDecoration: 'none' }}>Free Trial</Link>}
           <Link to="/training" style={{ color: '#aaa', textDecoration: 'none' }}>Training</Link>
           <Link to="/legal/terms"    style={{ color: '#aaa', textDecoration: 'none' }}>Terms</Link>
           <Link to="/legal/privacy"  style={{ color: '#aaa', textDecoration: 'none' }}>Privacy</Link>
+          <Link to="/legal/subscription" style={{ color: '#aaa', textDecoration: 'none' }}>Subscription Policy</Link>
         </div>
       </div>
     </div>
