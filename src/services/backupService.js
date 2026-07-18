@@ -3,11 +3,52 @@ import * as XLSX from 'xlsx';
 import { idbGetAll, idbPutMany, idbClear } from './indexedDB';
 import { writeRecord } from './syncService';
 import { v4 as uuidv4 } from 'uuid';
+import { db } from './firebase';
+import { collection, query, where, getCountFromServer } from 'firebase/firestore';
 
 const BACKUP_COLLECTIONS = [
   'students', 'enrollments', 'teachers', 'classes',
   'subjects', 'scores', 'results', 'promotions', 'analytics'
 ];
+
+// ── DATABASE STATUS ──────────────────────────────────────────────
+// Correct, CURRENT counts for the Backup & Recovery page. This used to
+// read from a global, unscoped IndexedDB count (getDBStats) — which
+// silently included every school ever cached on that device/browser,
+// not just the current one, and could be stale relative to Firestore.
+//
+// This version is always scoped to the current schoolId, and — when
+// online — asks Firestore directly for a live server-side count
+// (getCountFromServer is a cheap aggregation query, not a full read),
+// so what's shown is the real, current state of the database rather
+// than a local cache that might be out of date. Offline, it falls back
+// to the local per-school cache and says so clearly.
+export async function getSchoolDataStatus(schoolId) {
+  if (!schoolId) return { counts: {}, source: 'none', asOf: Date.now() };
+
+  if (navigator.onLine) {
+    try {
+      const counts = {};
+      for (const col of BACKUP_COLLECTIONS) {
+        const snap = await getCountFromServer(
+          query(collection(db, col), where('schoolId', '==', schoolId))
+        );
+        counts[col] = snap.data().count;
+      }
+      return { counts, source: 'live', asOf: Date.now() };
+    } catch (err) {
+      console.warn('[Backup] Live count failed, falling back to local cache:', err.message);
+      // fall through to local counts below
+    }
+  }
+
+  const counts = {};
+  for (const col of BACKUP_COLLECTIONS) {
+    const rows = await idbGetAll(col, 'schoolId', schoolId);
+    counts[col] = rows.length;
+  }
+  return { counts, source: 'cache', asOf: Date.now() };
+}
 
 // ── EXPORT ────────────────────────────────────────────────────────
 
@@ -90,7 +131,7 @@ export function downloadStudentImportTemplate() {
   // ── SHEET 1: Template (the one they fill in) ──────────────────
   const sheetData = [
     // Row 1: title row (merged visually via header style)
-    ['SchoolMS — Student Import Template — Fill from Row 5 downwards. Do NOT rename the headers in Row 4.'],
+    ['SchoolPilot — Student Import Template — Fill from Row 5 downwards. Do NOT rename the headers in Row 4.'],
     // Row 2: column key
     ['🔴 Red header = Required    🟢 Green header = Optional (leave blank if not known)'],
     // Row 3: blank spacer
@@ -118,7 +159,7 @@ export function downloadStudentImportTemplate() {
 
   // ── SHEET 2: Instructions ─────────────────────────────────────
   const instrData = [
-    ['SchoolMS Student Import — How to Use This Template'],
+    ['SchoolPilot Student Import — How to Use This Template'],
     [''],
     ['STEP 1 — Open the "Students" sheet (the other tab)'],
     ['• Rows 5, 6, 7 are examples — delete them or type over them.'],
@@ -140,7 +181,7 @@ export function downloadStudentImportTemplate() {
     ['• File → Save As → choose "Excel Workbook (.xlsx)"'],
     ['• Do NOT save as .csv or .xls'],
     [''],
-    ['STEP 5 — Upload in SchoolMS'],
+    ['STEP 5 — Upload in SchoolPilot'],
     ['• Go to Students page → click "⬇ Get Template / ⬆ Import Excel"'],
     ['• Select your saved file'],
     ['• A preview appears — review it'],
@@ -182,7 +223,7 @@ export function downloadStudentImportTemplate() {
   XLSX.utils.book_append_sheet(wb, ws3, 'Sample — 10 Students');
 
   // ── DOWNLOAD ──────────────────────────────────────────────────
-  XLSX.writeFile(wb, 'SchoolMS_Student_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'SchoolPilot_Student_Import_Template.xlsx');
 }
 
 export async function exportResultsAsExcel(schoolId, classId, academicYear, term) {
