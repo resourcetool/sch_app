@@ -16,7 +16,7 @@ import {
   updateDoc, deleteDoc, query, orderBy, serverTimestamp, where, writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { PLANS } from './subscriptionService';
+import { PLANS, BILLING_CYCLES, getPlanPrice } from './subscriptionService';
 
 // ── SUPER ADMIN CONFIG ────────────────────────────────────────────
 
@@ -375,25 +375,40 @@ export async function getPendingTrials() {
   }
 }
 
-export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false) {
+// Renews a school's subscription. `cycle` is 'termly' (default — the main,
+// recommended way schools pay, once per ~4-month term) or 'monthly'
+// (optional, for schools that specifically prefer to pay every 30 days).
+// Monthly is never forced — termly is simply the default because it fits
+// how Ghanaian schools already budget (per term, not per month), and it
+// gives a small built-in saving over paying 4 separate months.
+export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false, cycle = 'termly') {
   const snap = await getDoc(doc(db, 'subscriptions', schoolId));
   if (!snap.exists()) throw new Error('School subscription not found');
 
-  const existing  = snap.data();
-  const plan_data = PLANS[plan] || PLANS[existing.plan];
-  const now       = Date.now();
-  const baseDate  = existing.expiresAt > now ? existing.expiresAt : now;
-  const expiresAt = baseDate + plan_data.durationDays * 24 * 60 * 60 * 1000;
+  const existing    = snap.data();
+  const planId       = PLANS[plan] ? plan : existing.plan;
+  const plan_data     = PLANS[planId];
+  const billingCycle = BILLING_CYCLES[cycle] || BILLING_CYCLES.termly;
+  const now          = Date.now();
+  const baseDate     = existing.expiresAt > now ? existing.expiresAt : now;
+  // Trial plan keeps its fixed 21-day duration; paid plans use the chosen
+  // billing cycle's duration (30 days monthly, ~120 days/1 term termly).
+  const durationDays = planId === 'trial' ? plan_data.durationDays : billingCycle.durationDays;
+  const expiresAt    = baseDate + durationDays * 24 * 60 * 60 * 1000;
 
   const updated = {
-    plan,
-    status:      'active',
-    backupAddon: plan === 'premium' || backupAddon,
+    plan: planId,
+    status:       'active',
+    billingCycle: cycle,
+    backupAddon:  planId === 'premium' || backupAddon,
     expiresAt,
-    renewedAt:   now,
+    renewedAt:    now,
     paymentHistory: [
       ...(existing.paymentHistory || []),
-      { ref: paymentRef, amount: amountPaid, plan, date: now, notes },
+      {
+        ref: paymentRef, amount: amountPaid, plan: planId, cycle,
+        durationDays, date: now, notes,
+      },
     ],
   };
 
@@ -480,6 +495,18 @@ export async function getSchoolDetails(schoolId) {
     school:       schoolSnap.exists() ? { id: schoolId, ...schoolSnap.data() } : null,
     subscription: subSnap.exists()    ? subSnap.data()                          : null,
   };
+}
+
+// Returns the admin/staff login accounts registered for a school — the
+// personal info (name, email, phone, role) that was submitted at signup,
+// so super admin can see exactly who registered/manages the school.
+export async function getSchoolAdminProfiles(schoolId) {
+  const snap = await getDocs(
+    query(collection(db, 'users'), where('schoolId', '==', schoolId))
+  );
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.role === 'admin' ? -1 : 1) - (b.role === 'admin' ? -1 : 1));
 }
 
 export async function addSuperAdminNote(schoolId, note, adminEmail) {
