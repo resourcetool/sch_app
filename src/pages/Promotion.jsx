@@ -9,6 +9,78 @@ import {
 
 const STEPS = ['1. Select', '2. Validate', '3. Preview', '4. Execute', '5. Done'];
 
+// ── HELP / SUPPORT MODAL ────────────────────────────────────────────
+// Walks admins through how the Promotion Engine works, in plain language,
+// so they understand each step and rule before running a real promotion
+// (which creates new enrollment records and cannot be undone).
+function PromotionHelpModal({ onClose }) {
+  const sections = [
+    {
+      title: '1. What the Promotion Engine does',
+      body: 'At the end of a term (usually the final term of the year), the Promotion Engine moves every student in a class into their next class — or marks them as Graduated if it is the final class in your school. It decides each student\'s outcome (Promote / Repeat / Conditional / Graduate) automatically, based on their finalized results, but you can override any individual decision before anything is saved.',
+    },
+    {
+      title: '2. Before you start — what you need ready',
+      body: 'Results for the class and term must already be Generated and Finalized in the Reports page. The Promotion Engine reads directly from finalized results — if a student has no finalized result, they will fail validation and won\'t be included.',
+    },
+    {
+      title: '3. Step 1 — Select',
+      body: 'Choose the class you are promoting FROM, the class students should move INTO (leave blank and tick "final/graduating class" if this is the last class in your school), and the academic year/term the results belong to. Also set the destination academic year/term — usually the next term or next year.',
+    },
+    {
+      title: '4. Promotion Rules — what the numbers mean',
+      body: '"Promote if average ≥" is the score at or above which a student automatically promotes. "Conditional min/max" is the score range that gets marked Conditional (borderline — promoted with a warning, useful for students who need extra support next term). "Repeat if below" is the score below which a student automatically repeats the class. These are just starting defaults — you can change the numbers per promotion run, and override any single student\'s decision afterward regardless of their score.',
+    },
+    {
+      title: '5. Step 2 — Validate',
+      body: 'The system checks that every enrolled student has a finalized result for this class/term. If any are missing, you\'ll see exactly who — go back and finalize their results in Reports first, or proceed with the students who are ready.',
+    },
+    {
+      title: '6. Step 3 — Preview',
+      body: 'You see a full table of every student\'s computed decision before anything is saved. Nothing is final yet. Use the "Override" dropdown on any row to manually change a student\'s outcome — useful for cases the automatic rule doesn\'t capture well (illness during exams, a rule exception approved by the head teacher, etc).',
+    },
+    {
+      title: '7. Step 4 — Execute',
+      body: 'This is the irreversible step. Clicking "Execute Promotion" creates new enrollment records for every student in their new class (or marks them Graduated) and cannot be undone from within the app. Double-check the preview table first. If you make a mistake, contact support — do not just run another promotion to try to fix it.',
+    },
+    {
+      title: '8. Promotion History',
+      body: 'Every promotion run is permanently logged in the "Promotion History" tab — who ran it, when, and the full before/after summary — so you always have a record even months later.',
+    },
+  ];
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <span className="modal-title">❓ Help — How the Promotion Engine Works</span>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+        <div className="modal-body">
+          {sections.map(s => (
+            <div key={s.title} style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: 'var(--navy)', fontSize: '.86rem', marginBottom: 4 }}>{s.title}</div>
+              <div style={{ fontSize: '.82rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>{s.body}</div>
+            </div>
+          ))}
+          <div className="alert alert-warning" style={{ marginTop: 4 }}>
+            ⚠ Executing a promotion is permanent. Always review the Preview table carefully before clicking Execute.
+          </div>
+          <div style={{ marginTop: 14, fontSize: '.8rem', color: 'var(--text-mid)' }}>
+            Still stuck? Reach us on WhatsApp:{' '}
+            <a href="https://wa.me/233549548274?text=Hello, I need help with the Promotion Engine." target="_blank" rel="noreferrer" style={{ color: 'var(--navy)', fontWeight: 700 }}>
+              0549548274
+            </a>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn btn-primary">Got it</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DecisionBadge({ decision }) {
   const map = {
     [PROMOTION_STATUS.PROMOTE]:     { cls: 'decision-promote',     label: '↑ Promote'     },
@@ -25,6 +97,7 @@ export default function Promotion() {
   const { userProfile } = useAuth();
   const [step, setStep] = useState(0);
   const [tab, setTab] = useState('new'); // 'new' | 'history'
+  const [showHelp, setShowHelp] = useState(false);
 
   // Selection state
   const [sel, setSel] = useState({
@@ -123,7 +196,12 @@ export default function Promotion() {
     <div>
       <div className="page-header">
         <h1>Promotion Engine</h1>
+        <button onClick={() => setShowHelp(true)} className="btn btn-ghost btn-sm">
+          ❓ Help
+        </button>
       </div>
+
+      {showHelp && <PromotionHelpModal onClose={() => setShowHelp(false)} />}
 
       <div className="tabs">
         <button className={`tab${tab === 'new' ? ' active' : ''}`} onClick={() => setTab('new')}>New Promotion</button>
