@@ -13,7 +13,7 @@ import { useSubscription } from '../contexts/SubscriptionContext';
 import { getEnrollments, getStudents } from '../services/studentService';
 import {
   getResultsForClass, generateResults,
-  finalizeResults, defaultGradingScale,
+  finalizeResults, defaultGradingScale, getScoreEntryStatus,
 } from '../services/scoreService';
 import {
   generateStudentReportPDF, generateClassReportPDF, downloadPDF,
@@ -37,17 +37,20 @@ export default function Reports() {
   const [finalizing,      setFinalizing]       = useState(false);
   const [printing,        setPrinting]         = useState(false);
   const [showCustomizer,  setShowCustomizer]   = useState(false);
+  const [entryStatus,     setEntryStatus]      = useState(null);
 
   const load = useCallback(async () => {
     if (!filters.classId || !schoolId) return;
     setLoading(true);
     try {
-      const [res, studs] = await Promise.all([
+      const [res, studs, status] = await Promise.all([
         getResultsForClass(schoolId, filters.classId, filters.academicYear, filters.term),
         getStudents(schoolId),
+        getScoreEntryStatus(schoolId, filters.classId, filters.academicYear, filters.term),
       ]);
       setResults(res.sort((a, b) => a.position - b.position));
       setStudents(studs);
+      setEntryStatus(status);
     } finally { setLoading(false); }
   }, [filters, schoolId]);
 
@@ -58,7 +61,55 @@ export default function Reports() {
 
   async function handleGenerateResults() {
     if (!filters.classId) { alert('Select a class'); return; }
-    if (!window.confirm(`Generate results for ${selectedClass?.name}?`)) return;
+
+    // Re-fetch the freshest entry status right before generating, in case
+    // a teacher just saved scores in another tab/device.
+    let status = entryStatus;
+    try {
+      status = await getScoreEntryStatus(schoolId, filters.classId, filters.academicYear, filters.term);
+      setEntryStatus(status);
+    } catch { /* fall back to last-loaded status */ }
+
+    // ── MISUSE GUARD 1 — block entirely if nothing has been entered ──
+    if (status?.noneStarted) {
+      alert(
+        `No scores have been entered yet for ${selectedClass?.name}.\n\n` +
+        `Ask the assigned teacher(s) to enter class scores and exam scores ` +
+        `before generating a report — a report built with zero data isn't usable.`
+      );
+      return;
+    }
+
+    // ── MISUSE GUARD 2 — warn clearly if entry is incomplete ──────────
+    if (status && !status.allComplete) {
+      const incomplete = status.subjects.filter(s => !s.complete);
+      const detail = incomplete
+        .map(s => `• ${s.subjectName} (${s.teacherName}) — ${s.entered}/${s.total} students scored`)
+        .join('\n');
+      const proceed = window.confirm(
+        `⚠ Score entry is incomplete for ${selectedClass?.name} (${status.percentComplete}% complete):\n\n` +
+        `${detail}\n\n` +
+        `Missing class score or exam score will be treated as 0 for those students/subjects. ` +
+        `Generate anyway with incomplete data?`
+      );
+      if (!proceed) return;
+    }
+
+    // ── MISUSE GUARD 3 — avoid pointless duplicate/no-op regeneration ──
+    const alreadyGenerated = results.length > 0 && results[0]?.generatedAt;
+    const noNewScoresSinceLastRun = alreadyGenerated &&
+      status?.lastScoreUpdate && status.lastScoreUpdate <= results[0].generatedAt;
+    if (noNewScoresSinceLastRun) {
+      const proceed = window.confirm(
+        `Results for ${selectedClass?.name} were already generated on ` +
+        `${new Date(results[0].generatedAt).toLocaleString()}, and no scores have changed since then.\n\n` +
+        `Regenerate anyway?`
+      );
+      if (!proceed) return;
+    } else if (!window.confirm(`Generate results for ${selectedClass?.name}?`)) {
+      return;
+    }
+
     setGenerating(true);
     try {
       const scale = school?.gradingScale?.length ? school.gradingScale : defaultGradingScale();
@@ -213,6 +264,51 @@ export default function Reports() {
           </div>
         )}
       </div>
+
+      {/* Score Entry Status — lets admin see whether each teacher has
+          actually entered scores for this class/term before generating
+          or printing anything. */}
+      {isAdmin && filters.classId && entryStatus && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: '.86rem', color: 'var(--navy)' }}>
+              📝 Score Entry Status — {selectedClass?.name}
+            </div>
+            <span className={`badge badge-${entryStatus.allComplete ? 'success' : entryStatus.noneStarted ? 'danger' : 'warning'}`}>
+              {entryStatus.percentComplete}% complete
+            </span>
+          </div>
+          {entryStatus.subjects.length === 0 ? (
+            <p style={{ fontSize: '.82rem', color: 'var(--text-lt)' }}>
+              No subjects are assigned to this class yet — assign subjects in Classes or Subjects first.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Subject</th><th>Teacher</th><th>Entered</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {entryStatus.subjects.map(s => (
+                    <tr key={s.subjectId}>
+                      <td style={{ fontWeight: 600, fontSize: '.82rem' }}>{s.subjectName}</td>
+                      <td style={{ fontSize: '.8rem', color: s.teacherName === 'Unassigned' ? 'var(--danger)' : 'var(--text-mid)' }}>
+                        {s.teacherName}
+                      </td>
+                      <td style={{ fontSize: '.8rem' }}>{s.entered}/{s.total} students</td>
+                      <td>
+                        <span className={`badge badge-${s.complete ? 'success' : s.started ? 'warning' : 'danger'}`} style={{ fontSize: '.7rem' }}>
+                          {s.complete ? '✓ Complete' : s.started ? '⏳ Partial' : '✗ Not entered'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Results Table */}
       <div className="card">
