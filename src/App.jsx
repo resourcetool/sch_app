@@ -104,6 +104,7 @@ function AppRoutes() {
   if (isTeacher) {
     return (
       <Routes>
+        <Route path="/pricing" element={<Pricing />} />
         <Route element={<SchoolApp />}>
           <Route path="/"          element={<Navigate to="/scores" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
