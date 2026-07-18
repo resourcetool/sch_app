@@ -75,8 +75,12 @@ function TeacherModal({ teacher, classes, subjects, schoolId, onClose, onSave })
     }));
   }
 
+  // Checks both directions a subject can be linked to a class: subject.classIds
+  // (set from the Subjects page) OR class.subjectIds (set from the Classes page).
   const selectedClassSubjects = subjects.filter(s =>
-    form.assignedClasses.some(cid => s.classIds?.includes(cid))
+    form.assignedClasses.some(cid =>
+      s.classIds?.includes(cid) || classes.find(c => c.id === cid)?.subjectIds?.includes(s.id)
+    )
   );
 
   function assignClassSubjects() {
