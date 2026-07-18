@@ -249,7 +249,7 @@ function RenewModal({ school, onClose, onRenewed }) {
                     </div>
                     <div style={{ fontSize: '.7rem', opacity: .85 }}>
                       {c === 'termly'
-                        ? 'Pay once, ~every 4 months — saves half a month'
+                        ? 'Pay once, every 3 months (1 term) — saves half a month'
                         : 'Pay every 30 days — no discount'}
                     </div>
                   </button>
