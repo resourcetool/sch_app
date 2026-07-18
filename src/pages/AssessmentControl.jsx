@@ -76,7 +76,12 @@ function WindowModal({ win, classes, subjects, schoolId, onClose, onSaved }) {
   const [error,  setError]  = useState('');
   const fn = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const classSubjects = subjects.filter(s => s.classIds?.includes(form.classId));
+  // Checks both directions: subject.classIds (set from Subjects page) OR
+  // class.subjectIds (set from Classes page).
+  const selectedClass = classes.find(c => c.id === form.classId);
+  const classSubjects = subjects.filter(s =>
+    s.classIds?.includes(form.classId) || selectedClass?.subjectIds?.includes(s.id)
+  );
 
   async function handleSave(e) {
     e.preventDefault();
@@ -293,7 +298,10 @@ export default function AssessmentControl() {
     }
   }, [school]);
 
-  const classSubjects = subjects.filter(s => s.classIds?.includes(filters.classId));
+  const filterClass  = classes.find(c => c.id === filters.classId);
+  const classSubjects = subjects.filter(s =>
+    s.classIds?.includes(filters.classId) || filterClass?.subjectIds?.includes(s.id)
+  );
   const selectedSubject = subjects.find(s => s.id === filters.subjectId);
   const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
   const classMap   = Object.fromEntries(classes.map(c => [c.id, c]));
