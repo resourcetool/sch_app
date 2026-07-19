@@ -219,7 +219,7 @@ export async function markCodeUsed(codeId, schoolId, schoolName) {
 
 // ── SUBSCRIPTION MANAGEMENT ───────────────────────────────────────
 
-export async function activateSchool(schoolId, schoolName, plan, adminEmail, paymentRef, amountPaid, notes) {
+export async function activateSchool(schoolId, schoolName, plan, adminEmail, paymentRef, amountPaid, notes, registrationCodeId = null) {
   const plan_data = PLANS[plan] || PLANS.starter;
   const now       = Date.now();
   const expiresAt = now + plan_data.durationDays * 24 * 60 * 60 * 1000;
@@ -235,6 +235,9 @@ export async function activateSchool(schoolId, schoolName, plan, adminEmail, pay
     expiresAt,
     renewedAt:    now,
     adminEmail,
+    registrationCodeId, // lets the Firestore rule verify this activation is
+                         // tied to a genuinely super-admin-issued, already-
+                         // consumed code — see subscriptions rule.
     paymentHistory: [{ ref: paymentRef, amount: amountPaid, plan, date: now, notes }],
   };
 
@@ -712,7 +715,7 @@ export async function getSchoolActivityLog(schoolId, limitCount = 100) {
 // ── SUPER ADMIN EMAIL (via EmailJS) ──────────────────────────────
 // Sends email to one recipient or broadcasts to all school admins.
 // Uses the same EmailJS config as the access-request notifications.
-export async function sendSuperAdminEmail(to, subject, body, fromName = 'SchoolMS Admin') {
+export async function sendSuperAdminEmail(to, subject, body, fromName = 'SchoolPilot Admin') {
   const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
   const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID_GENERAL ||
                      import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
