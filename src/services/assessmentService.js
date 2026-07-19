@@ -8,7 +8,7 @@
 
 import {
   collection, doc, getDoc, getDocs, setDoc,
-  updateDoc, deleteDoc, query, where, orderBy, serverTimestamp
+  updateDoc, deleteDoc, query, where, serverTimestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { writeRecord } from './syncService';
@@ -127,16 +127,24 @@ export async function logAssessmentAudit(opts) {
 
 /**
  * Retrieves the full audit log for a school (ordered newest-first).
+ *
+ * NOTE: sorts client-side rather than using orderBy() in the query.
+ * A where(schoolId) + orderBy(timestamp) query needs a composite Firestore
+ * index that isn't guaranteed to exist; if it doesn't, Firestore throws
+ * 'failed-precondition' and the caller's try/catch silently swallows it —
+ * the page just shows an empty list with no visible error. Filtering by a
+ * single field and sorting the (small, per-school) result set in JS avoids
+ * that index dependency entirely.
  */
 export async function getAuditLog(schoolId) {
   const snap = await getDocs(
     query(
       collection(db, 'assessmentAuditLog'),
-      where('schoolId', '==', schoolId),
-      orderBy('timestamp', 'desc')
+      where('schoolId', '==', schoolId)
     )
   );
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 }
 
 /**
@@ -146,11 +154,11 @@ export async function getScoreAuditHistory(scoreId) {
   const snap = await getDocs(
     query(
       collection(db, 'assessmentAuditLog'),
-      where('scoreId', '==', scoreId),
-      orderBy('timestamp', 'desc')
+      where('scoreId', '==', scoreId)
     )
   );
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 }
 
 // ── TEACHER SCORE SUBMISSION (with deadline enforcement) ──────────
@@ -282,12 +290,12 @@ export async function adminApproveScore(scoreId, schoolId, adminProfile) {
 export async function getAllSchoolScores(schoolId, filters = {}) {
   let q = query(
     collection(db, 'scores'),
-    where('schoolId', '==', schoolId),
-    orderBy('updatedAt', 'desc')
+    where('schoolId', '==', schoolId)
   );
 
   const snap = await getDocs(q);
-  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
   // Apply optional client-side filters
   if (filters.academicYear) results = results.filter(s => s.academicYear === filters.academicYear);
@@ -300,14 +308,21 @@ export async function getAllSchoolScores(schoolId, filters = {}) {
 
 /**
  * Fetch all assessment deadline configs for a school.
+ *
+ * NOTE: sorts client-side — see getAuditLog() above for why orderBy() is
+ * deliberately avoided here (it silently returned an empty deadlines list
+ * in the UI whenever the composite index wasn't present, which is exactly
+ * what was happening: admins could set a deadline, teachers correctly saw
+ * it enforced via the single-doc lookup in getAssessmentDeadline(), but
+ * admins couldn't see, edit, or remove it from the Deadlines list here).
  */
 export async function getAllDeadlines(schoolId) {
   const snap = await getDocs(
     query(
       collection(db, 'assessmentDeadlines'),
-      where('schoolId', '==', schoolId),
-      orderBy('updatedAt', 'desc')
+      where('schoolId', '==', schoolId)
     )
   );
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
