@@ -260,6 +260,7 @@ export default function AssessmentDeadlines() {
   const [deadlines,  setDeadlines]  = useState([]);
   const [auditLog,   setAuditLog]   = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState('');
   const [tab,        setTab]        = useState('deadlines');
   const [modal,      setModal]      = useState(null); // null | 'create' | 'edit'
   const [editing,    setEditing]    = useState(null);
@@ -269,6 +270,7 @@ export default function AssessmentDeadlines() {
   const load = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
+    setLoadError('');
     try {
       const [dl, al] = await Promise.all([
         getAllDeadlines(schoolId),
@@ -278,6 +280,10 @@ export default function AssessmentDeadlines() {
       setAuditLog(al);
     } catch (err) {
       console.error('AssessmentDeadlines load error:', err);
+      setLoadError(
+        'Could not load deadlines: ' + err.message +
+        '. Try refreshing — if this keeps happening, contact support.'
+      );
     } finally {
       setLoading(false);
     }
@@ -319,6 +325,13 @@ export default function AssessmentDeadlines() {
           + Set Deadline
         </button>
       </div>
+
+      {loadError && (
+        <div className="alert alert-danger" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span>⚠ {loadError}</span>
+          <button onClick={load} className="btn btn-ghost btn-sm">↻ Retry</button>
+        </div>
+      )}
 
       <div className="tabs">
         <button className={`tab${tab === 'deadlines' ? ' active' : ''}`} onClick={() => setTab('deadlines')}>
