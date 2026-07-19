@@ -75,6 +75,28 @@ export async function extendDeadline(schoolId, academicYear, term, newCloseAt, a
 }
 
 /**
+ * Permanently removes a deadline configuration. Once deleted, teachers can
+ * submit scores for that academic year/term at any time again — same as
+ * if a deadline had never been set. This does not touch any scores that
+ * were already entered.
+ */
+export async function deleteAssessmentDeadline(schoolId, academicYear, term, adminProfile) {
+  const id = `deadline_${schoolId}_${academicYear}_${term}`.replace(/\//g, '-');
+  await deleteDoc(doc(db, 'assessmentDeadlines', id));
+
+  await logAssessmentAudit({
+    schoolId,
+    scoreId:     null,
+    editorId:    adminProfile?.id,
+    editorEmail: adminProfile?.email,
+    previousValue: { academicYear, term },
+    newValue:    null,
+    reason:      `Deadline removed for ${academicYear} Term ${term}`,
+    action:      'delete',
+  });
+}
+
+/**
  * Check whether the deadline window is currently open.
  * Returns { allowed: boolean, reason: string }
  */
