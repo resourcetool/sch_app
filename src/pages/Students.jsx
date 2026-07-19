@@ -197,6 +197,12 @@ export default function Students() {
   const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState('');
   const [filterClass, setFilterClass] = useState('');
+  const [filterGender,setFilterGender]= useState('');
+  const [filterStatus,setFilterStatus]= useState('');
+  const [sortBy,      setSortBy]      = useState('name');   // name | code | class | status | gender
+  const [sortDir,     setSortDir]     = useState('asc');    // asc | desc
+  const [viewMode,    setViewMode]    = useState('table');  // table | card | kanban | tree
+  const [expandedGroups, setExpandedGroups] = useState({}); // for tree view
   const [modal,       setModal]       = useState(null);
   const [selected,    setSelected]    = useState(null);
   const [importing,   setImporting]   = useState(false);
@@ -233,9 +239,52 @@ export default function Students() {
   const filtered = students.filter(s => {
     const matchSearch = !search ||
       `${s.firstName} ${s.lastName} ${s.studentCode}`.toLowerCase().includes(search.toLowerCase());
-    const matchClass = !filterClass || enrollMap[s.id]?.classId === filterClass;
-    return matchSearch && matchClass;
+    const matchClass  = !filterClass  || enrollMap[s.id]?.classId === filterClass;
+    const matchGender = !filterGender || s.gender === filterGender;
+    const matchStatus = !filterStatus || s.status === filterStatus;
+    return matchSearch && matchClass && matchGender && matchStatus;
   });
+
+  // ── SORT ──────────────────────────────────────────────────────
+  const sortValue = (s, key) => {
+    switch (key) {
+      case 'code':   return s.studentCode || '';
+      case 'class':  return classMap[enrollMap[s.id]?.classId]?.name || '\uffff'; // unenrolled sorts last
+      case 'status': return s.status || '';
+      case 'gender': return s.gender || '';
+      case 'name':
+      default:       return `${s.lastName} ${s.firstName}`;
+    }
+  };
+  const sorted = [...filtered].sort((a, b) => {
+    const cmp = sortValue(a, sortBy).localeCompare(sortValue(b, sortBy));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  // ── GROUP BY CLASS (used by Kanban & Tree views) ────────────────
+  // Every class appears as its own group (even with 0 students, so
+  // admin/super admin can see class rosters are empty at a glance), plus
+  // an "Unassigned" group for students with no active enrollment.
+  const groupsByClass = (() => {
+    const groups = classes.map(c => ({
+      id: c.id, name: c.name, students: [],
+    }));
+    const unassigned = { id: '__unassigned', name: 'Not Enrolled', students: [] };
+    const byId = Object.fromEntries(groups.map(g => [g.id, g]));
+    sorted.forEach(s => {
+      const cid = enrollMap[s.id]?.classId;
+      if (cid && byId[cid]) byId[cid].students.push(s);
+      else unassigned.students.push(s);
+    });
+    const nonEmptyOrFiltered = groups.filter(g => g.students.length > 0 || !filterClass);
+    return unassigned.students.length > 0 || !filterClass
+      ? [...nonEmptyOrFiltered, unassigned]
+      : nonEmptyOrFiltered;
+  })();
+
+  function toggleGroup(id) {
+    setExpandedGroups(g => ({ ...g, [id]: !g[id] }));
+  }
 
   // ── DUPLICATE NAME DETECTION ────────────────────────────────────
   const duplicateStudentGroups = (() => {
@@ -334,6 +383,23 @@ export default function Students() {
     } catch (err) {
       setError('Failed to remove student: ' + err.message);
     }
+  }
+
+  // Shared action buttons — used by Table and Card views (Kanban and Tree
+  // use their own compact inline versions to fit tighter layouts).
+  function renderStudentActions(s, cls) {
+    return (
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('edit'); }}>Edit</button>
+        {!cls && (
+          <button className="btn btn-primary btn-sm" onClick={() => { setSelected(s); setModal('enroll'); }}>Enroll</button>
+        )}
+        {cls && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('enroll'); }}>Re-enroll</button>
+        )}
+        <button className="btn btn-danger btn-sm" onClick={() => handleRemove(s)}>Remove</button>
+      </div>
+    );
   }
 
   // ── IMPORT ────────────────────────────────────────────────────
@@ -579,23 +645,73 @@ export default function Students() {
 
       <div className="card">
         {/* Filters */}
-        <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
           <input
             placeholder="🔍 Search name or ID…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ flex: 1, minWidth: 180 }}
+            style={{ flex: 1, minWidth: 160 }}
           />
-          <select
-            value={filterClass}
-            onChange={e => setFilterClass(e.target.value)}
-            style={{ minWidth: 150 }}
-          >
+          <select value={filterClass} onChange={e => setFilterClass(e.target.value)} style={{ minWidth: 130 }}>
             <option value="">All Classes</option>
             {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <span style={{ alignSelf: 'center', fontSize: '.8rem', color: 'var(--text-lt)', whiteSpace: 'nowrap' }}>
-            {filtered.length} / {students.length}
+          <select value={filterGender} onChange={e => setFilterGender(e.target.value)} style={{ minWidth: 110 }}>
+            <option value="">All Genders</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ minWidth: 120 }}>
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="graduated">Graduated</option>
+            <option value="withdrawn">Withdrawn</option>
+          </select>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ minWidth: 120 }} title="Sort by">
+            <option value="name">Sort: Name</option>
+            <option value="code">Sort: ID</option>
+            <option value="class">Sort: Class</option>
+            <option value="status">Sort: Status</option>
+            <option value="gender">Sort: Gender</option>
+          </select>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
+          >
+            {sortDir === 'asc' ? '↑ A–Z' : '↓ Z–A'}
+          </button>
+          {(search || filterClass || filterGender || filterStatus) && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => { setSearch(''); setFilterClass(''); setFilterGender(''); setFilterStatus(''); }}
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
+
+        {/* View mode toggle + result count */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[
+              { key: 'table',  label: '☰ Table'  },
+              { key: 'card',   label: '▦ Cards'  },
+              { key: 'kanban', label: '📋 Kanban' },
+              { key: 'tree',   label: '🌳 Tree'   },
+            ].map(v => (
+              <button
+                key={v.key}
+                onClick={() => setViewMode(v.key)}
+                className={`btn btn-sm ${viewMode === v.key ? 'btn-primary' : 'btn-ghost'}`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <span style={{ fontSize: '.8rem', color: 'var(--text-lt)', whiteSpace: 'nowrap' }}>
+            Showing {filtered.length} of {students.length}
           </span>
         </div>
 
@@ -604,9 +720,9 @@ export default function Students() {
         ) : filtered.length === 0 ? (
           <div className="empty-state">
             <div className="icon">👥</div>
-            <p>{search || filterClass ? 'No students match your filter.' : 'No students yet. Use Quick Add above.'}</p>
+            <p>{search || filterClass || filterGender || filterStatus ? 'No students match your filters.' : 'No students yet. Use Quick Add above.'}</p>
           </div>
-        ) : (
+        ) : viewMode === 'table' ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -620,7 +736,7 @@ export default function Students() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(s => {
+                {sorted.map(s => {
                   const enr = enrollMap[s.id];
                   const cls = enr ? classMap[enr.classId] : null;
                   return (
@@ -639,25 +755,117 @@ export default function Students() {
                           {s.status}
                         </span>
                       </td>
-                      {isAdmin && (
-                        <td>
-                          <div style={{ display: 'flex', gap: 5 }}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('edit'); }}>Edit</button>
-                            {!cls && (
-                              <button className="btn btn-primary btn-sm" onClick={() => { setSelected(s); setModal('enroll'); }}>Enroll</button>
-                            )}
-                            {cls && (
-                              <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('enroll'); }}>Re-enroll</button>
-                            )}
-                            <button className="btn btn-danger btn-sm" onClick={() => handleRemove(s)}>Remove</button>
-                          </div>
-                        </td>
-                      )}
+                      {isAdmin && <td>{renderStudentActions(s, cls)}</td>}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          </div>
+        ) : viewMode === 'card' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            {sorted.map(s => {
+              const enr = enrollMap[s.id];
+              const cls = enr ? classMap[enr.classId] : null;
+              return (
+                <div key={s.id} className="card" style={{ margin: 0, padding: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{s.lastName}, {s.firstName}</div>
+                  <div className="td-mono" style={{ fontSize: '.74rem', color: 'var(--text-lt)', marginBottom: 8 }}>{s.studentCode}</div>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+                    <span className="badge badge-neutral" style={{ fontSize: '.7rem' }}>{s.gender}</span>
+                    {cls
+                      ? <span className="badge badge-info" style={{ fontSize: '.7rem' }}>{cls.name}</span>
+                      : <span className="badge badge-neutral" style={{ fontSize: '.7rem' }}>Not enrolled</span>
+                    }
+                    <span className={`badge badge-${s.status === 'active' ? 'success' : s.status === 'graduated' ? 'info' : 'neutral'}`} style={{ fontSize: '.7rem' }}>
+                      {s.status}
+                    </span>
+                  </div>
+                  {isAdmin && renderStudentActions(s, cls)}
+                </div>
+              );
+            })}
+          </div>
+        ) : viewMode === 'kanban' ? (
+          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>
+            {groupsByClass.map(g => (
+              <div key={g.id} style={{
+                flex: '0 0 240px', background: 'var(--surface2)', borderRadius: 10, padding: 10,
+              }}>
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid var(--border)',
+                }}>
+                  <span style={{ fontWeight: 700, fontSize: '.85rem' }}>{g.name}</span>
+                  <span className="badge badge-info" style={{ fontSize: '.72rem' }}>{g.students.length}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 480, overflowY: 'auto' }}>
+                  {g.students.length === 0 ? (
+                    <div style={{ fontSize: '.76rem', color: 'var(--text-lt)', textAlign: 'center', padding: '10px 0' }}>No students</div>
+                  ) : g.students.map(s => (
+                    <div key={s.id} className="card" style={{ margin: 0, padding: '8px 10px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '.82rem' }}>{s.lastName}, {s.firstName}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                        <span className="td-mono" style={{ fontSize: '.7rem', color: 'var(--text-lt)' }}>{s.studentCode}</span>
+                        <span className={`badge badge-${s.status === 'active' ? 'success' : s.status === 'graduated' ? 'info' : 'neutral'}`} style={{ fontSize: '.64rem' }}>
+                          {s.status}
+                        </span>
+                      </div>
+                      {isAdmin && (
+                        <div style={{ marginTop: 6 }}>
+                          <button className="btn btn-ghost btn-sm" style={{ fontSize: '.68rem', padding: '2px 6px' }} onClick={() => { setSelected(s); setModal('edit'); }}>Edit</button>
+                          <button className="btn btn-ghost btn-sm" style={{ fontSize: '.68rem', padding: '2px 6px' }} onClick={() => { setSelected(s); setModal('enroll'); }}>{g.id === '__unassigned' ? 'Enroll' : 'Move'}</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* ── TREE VIEW ── */
+          <div>
+            {groupsByClass.map(g => {
+              const isOpen = expandedGroups[g.id] ?? true;
+              return (
+                <div key={g.id} style={{ marginBottom: 8 }}>
+                  <div
+                    onClick={() => toggleGroup(g.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                      padding: '8px 10px', background: 'var(--surface2)', borderRadius: 8, fontWeight: 700,
+                    }}
+                  >
+                    <span style={{ fontSize: '.72rem', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
+                    <span>{g.id === '__unassigned' ? '📂' : '🏫'} {g.name}</span>
+                    <span className="badge badge-info" style={{ fontSize: '.7rem', marginLeft: 'auto' }}>{g.students.length} student{g.students.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ marginLeft: 24, marginTop: 4, borderLeft: '2px solid var(--border)', paddingLeft: 12 }}>
+                      {g.students.length === 0 ? (
+                        <div style={{ fontSize: '.78rem', color: 'var(--text-lt)', padding: '6px 0' }}>No students in this class</div>
+                      ) : g.students.map(s => (
+                        <div key={s.id} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '6px 8px', fontSize: '.82rem', borderBottom: '1px solid var(--border)',
+                        }}>
+                          <span>👤 {s.lastName}, {s.firstName} <span className="td-mono" style={{ fontSize: '.7rem', color: 'var(--text-lt)' }}>({s.studentCode})</span></span>
+                          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span className={`badge badge-${s.status === 'active' ? 'success' : s.status === 'graduated' ? 'info' : 'neutral'}`} style={{ fontSize: '.68rem' }}>
+                              {s.status}
+                            </span>
+                            {isAdmin && (
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: '.68rem', padding: '1px 6px' }} onClick={() => { setSelected(s); setModal('edit'); }}>Edit</button>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
