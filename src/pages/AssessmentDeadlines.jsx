@@ -9,13 +9,13 @@ import { useSchool } from '../contexts/SchoolContext';
 import { useAuth }   from '../contexts/AuthContext';
 import {
   getAllDeadlines, setAssessmentDeadline,
-  setDeadlineLock, extendDeadline, getAuditLog,
+  setDeadlineLock, extendDeadline, deleteAssessmentDeadline, getAuditLog,
   checkDeadlineStatus,
 } from '../services/assessmentService';
 
 // ── DEADLINE CARD ─────────────────────────────────────────────────
 
-function DeadlineCard({ deadline, onEdit, onLock, onExtend }) {
+function DeadlineCard({ deadline, onEdit, onLock, onExtend, onDelete }) {
   const { allowed, reason } = checkDeadlineStatus(deadline);
   const isExpired = deadline.closeAt && Date.now() > deadline.closeAt;
 
@@ -63,6 +63,7 @@ function DeadlineCard({ deadline, onEdit, onLock, onExtend }) {
           {deadline.closeAt && (
             <button className="btn btn-primary btn-sm" onClick={() => onExtend(deadline)}>Extend</button>
           )}
+          <button className="btn btn-danger btn-sm" onClick={() => onDelete(deadline)}>🗑 Delete</button>
         </div>
       </div>
     </div>
@@ -302,6 +303,20 @@ export default function AssessmentDeadlines() {
     }
   }
 
+  async function handleDelete(deadline) {
+    if (!window.confirm(
+      `Delete the deadline for ${deadline.label}?\n\n` +
+      `Teachers will be able to submit scores for ${deadline.academicYear} Term ${deadline.term} ` +
+      `at any time again, with no deadline restriction, until you set a new one.`
+    )) return;
+    try {
+      await deleteAssessmentDeadline(schoolId, deadline.academicYear, deadline.term, userProfile);
+      load();
+    } catch (err) {
+      alert('Failed to delete: ' + err.message);
+    }
+  }
+
   async function handleExtend(e) {
     e.preventDefault();
     if (!newClose) return;
@@ -364,6 +379,7 @@ export default function AssessmentDeadlines() {
                 onEdit={dl => { setEditing(dl); setModal('edit'); }}
                 onLock={handleLock}
                 onExtend={dl => { setExtendTarget(dl); setNewClose(''); }}
+                onDelete={handleDelete}
               />
             ))
           )}
