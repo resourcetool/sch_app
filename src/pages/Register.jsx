@@ -83,7 +83,7 @@ export default function Register() {
       await activateSchool(
         school.id, form.schoolName, codeData.plan,
         form.email, 'CODE:' + form.accessCode, 0,
-        'Initial activation via access code'
+        'Initial activation via access code', codeData.id
       );
       navigate('/');
     } catch (err) {
