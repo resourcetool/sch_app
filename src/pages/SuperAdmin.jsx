@@ -1414,6 +1414,17 @@ function SchoolDataBrowser({ schools }) {
   const [dataError,        setDataError]         = useState('');
   const [search,           setSearch]            = useState('');
 
+  // Students-tab-only extras: extra filters, sort, and view mode. Kept
+  // separate from `search` (which applies to every data tab) since these
+  // are specific to browsing/analyzing the student roster.
+  const [sClassFilter,  setSClassFilter]  = useState('');
+  const [sGenderFilter, setSGenderFilter] = useState('');
+  const [sStatusFilter, setSStatusFilter] = useState('');
+  const [sSortBy,       setSSortBy]       = useState('name'); // name | code | class | status | gender
+  const [sSortDir,      setSSortDir]      = useState('asc');
+  const [sViewMode,     setSViewMode]     = useState('table'); // table | card | kanban | tree
+  const [sExpandedGroups, setSExpandedGroups] = useState({});
+
   // ── QUICK-ADD STUDENT (on behalf of school) ──────────────────────
   const [sFirst,  setSFirst]  = useState('');
   const [sLast,   setSLast]   = useState('');
@@ -1734,14 +1745,10 @@ function SchoolDataBrowser({ schools }) {
   }
 
   const currentRecords = data?.[dataTab] || [];
-  const filtered = search
-    ? currentRecords.filter(r =>
-        JSON.stringify(r).toLowerCase().includes(search.toLowerCase())
-      )
-    : currentRecords;
 
   // Student → current class lookup (via active enrollment), so super admin
-  // can see which class each enrolled student belongs to.
+  // can see which class each enrolled student belongs to. Declared before
+  // `filtered`/`sSorted`/`sGroupsByClass` below, since they all depend on it.
   const classById   = Object.fromEntries((data?.classes  || []).map(c => [c.id, c]));
   const studentById = Object.fromEntries((data?.students || []).map(s => [s.id, s]));
   const subjectById = Object.fromEntries((data?.subjects || []).map(s => [s.id, s]));
@@ -1760,6 +1767,56 @@ function SchoolDataBrowser({ schools }) {
   function studentDisplayName(studentId) {
     const s = studentById[studentId];
     return s ? `${s.firstName} ${s.lastName}` : (studentId ? studentId.substring(0, 8) + '…' : '—');
+  }
+
+  const filtered = (search
+    ? currentRecords.filter(r =>
+        JSON.stringify(r).toLowerCase().includes(search.toLowerCase())
+      )
+    : currentRecords
+  ).filter(r => {
+    if (dataTab !== 'students') return true;
+    const matchClass  = !sClassFilter  || classByStudentId[r.id]?.classId === sClassFilter;
+    const matchGender = !sGenderFilter || r.gender === sGenderFilter;
+    const matchStatus = !sStatusFilter || r.status === sStatusFilter;
+    return matchClass && matchGender && matchStatus;
+  });
+
+  // ── SORT (students tab) ──────────────────────────────────────────
+  const sSortValue = (s, key) => {
+    switch (key) {
+      case 'code':   return s.studentCode || '';
+      case 'class':  return classById[classByStudentId[s.id]?.classId]?.name || '\uffff';
+      case 'status': return s.status || '';
+      case 'gender': return s.gender || '';
+      case 'name':
+      default:       return `${s.lastName} ${s.firstName}`;
+    }
+  };
+  const sSorted = dataTab === 'students'
+    ? [...filtered].sort((a, b) => {
+        const cmp = sSortValue(a, sSortBy).localeCompare(sSortValue(b, sSortBy));
+        return sSortDir === 'asc' ? cmp : -cmp;
+      })
+    : filtered;
+
+  // ── GROUP BY CLASS (students tab — Kanban & Tree views) ────────────
+  const sGroupsByClass = (() => {
+    if (dataTab !== 'students') return [];
+    const groups = (data?.classes || []).map(c => ({ id: c.id, name: c.name, students: [] }));
+    const unassigned = { id: '__unassigned', name: 'Not Enrolled', students: [] };
+    const byId = Object.fromEntries(groups.map(g => [g.id, g]));
+    sSorted.forEach(s => {
+      const cid = classByStudentId[s.id]?.classId;
+      if (cid && byId[cid]) byId[cid].students.push(s);
+      else unassigned.students.push(s);
+    });
+    const kept = groups.filter(g => g.students.length > 0 || !sClassFilter);
+    return unassigned.students.length > 0 || !sClassFilter ? [...kept, unassigned] : kept;
+  })();
+
+  function sToggleGroup(id) {
+    setSExpandedGroups(g => ({ ...g, [id]: !g[id] }));
   }
 
   // ── DUPLICATE NAME DETECTION (students & teachers) ─────────────────
@@ -2053,22 +2110,145 @@ function SchoolDataBrowser({ schools }) {
 
           {/* Search */}
           <div className="card">
-            <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <input
                 placeholder={`Search ${dataTab}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: 160 }}
               />
+              {dataTab === 'students' && (
+                <>
+                  <select value={sClassFilter} onChange={e => setSClassFilter(e.target.value)} style={{ minWidth: 120 }}>
+                    <option value="">All Classes</option>
+                    {(data?.classes || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <select value={sGenderFilter} onChange={e => setSGenderFilter(e.target.value)} style={{ minWidth: 110 }}>
+                    <option value="">All Genders</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                  <select value={sStatusFilter} onChange={e => setSStatusFilter(e.target.value)} style={{ minWidth: 120 }}>
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="graduated">Graduated</option>
+                    <option value="withdrawn">Withdrawn</option>
+                  </select>
+                  <select value={sSortBy} onChange={e => setSSortBy(e.target.value)} style={{ minWidth: 110 }} title="Sort by">
+                    <option value="name">Sort: Name</option>
+                    <option value="code">Sort: ID</option>
+                    <option value="class">Sort: Class</option>
+                    <option value="status">Sort: Status</option>
+                    <option value="gender">Sort: Gender</option>
+                  </select>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setSSortDir(d => d === 'asc' ? 'desc' : 'asc')}>
+                    {sSortDir === 'asc' ? '↑ A–Z' : '↓ Z–A'}
+                  </button>
+                </>
+              )}
               <span style={{ fontSize: '.8rem', color: 'var(--text-lt)', whiteSpace: 'nowrap' }}>
                 {filtered.length} / {currentRecords.length}
               </span>
             </div>
 
+            {dataTab === 'students' && (
+              <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+                {[
+                  { key: 'table',  label: '☰ Table'  },
+                  { key: 'card',   label: '▦ Cards'  },
+                  { key: 'kanban', label: '📋 Kanban' },
+                  { key: 'tree',   label: '🌳 Tree'   },
+                ].map(v => (
+                  <button
+                    key={v.key}
+                    onClick={() => setSViewMode(v.key)}
+                    className={`btn btn-sm ${sViewMode === v.key ? 'btn-primary' : 'btn-ghost'}`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {filtered.length === 0 ? (
               <div className="empty-state">
                 <div className="icon">📭</div>
                 <p>No {dataTab} records found.</p>
+              </div>
+            ) : dataTab === 'students' && sViewMode === 'card' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+                {sSorted.map(s => (
+                  <div key={s.id} className="card" style={{ margin: 0, padding: 12 }}>
+                    <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{s.lastName}, {s.firstName}</div>
+                    <div className="td-mono" style={{ fontSize: '.74rem', color: 'var(--text-lt)', marginBottom: 8 }}>{s.studentCode}</div>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+                      <span className="badge badge-neutral" style={{ fontSize: '.7rem' }}>{s.gender}</span>
+                      <span className="badge badge-info" style={{ fontSize: '.7rem' }}>{studentClassName(s.id) || 'Not enrolled'}</span>
+                      <span className={`badge badge-${s.status === 'active' ? 'success' : s.status === 'graduated' ? 'info' : 'neutral'}`} style={{ fontSize: '.7rem' }}>
+                        {s.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: '.7rem', padding: '2px 8px' }} onClick={() => setEditStudent(s)}>✎ Edit</button>
+                      <button className="btn btn-danger btn-sm" style={{ fontSize: '.7rem', padding: '2px 8px' }} onClick={() => handleDeleteRecord('students', s.id, rowLabel(s))}>🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : dataTab === 'students' && sViewMode === 'kanban' ? (
+              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>
+                {sGroupsByClass.map(g => (
+                  <div key={g.id} style={{ flex: '0 0 230px', background: 'var(--surface2)', borderRadius: 10, padding: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid var(--border)' }}>
+                      <span style={{ fontWeight: 700, fontSize: '.84rem' }}>{g.name}</span>
+                      <span className="badge badge-info" style={{ fontSize: '.7rem' }}>{g.students.length}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 460, overflowY: 'auto' }}>
+                      {g.students.length === 0 ? (
+                        <div style={{ fontSize: '.74rem', color: 'var(--text-lt)', textAlign: 'center', padding: '10px 0' }}>No students</div>
+                      ) : g.students.map(s => (
+                        <div key={s.id} className="card" style={{ margin: 0, padding: '8px 10px' }}>
+                          <div style={{ fontWeight: 600, fontSize: '.8rem' }}>{s.lastName}, {s.firstName}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                            <span className="td-mono" style={{ fontSize: '.68rem', color: 'var(--text-lt)' }}>{s.studentCode}</span>
+                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '.66rem', padding: '1px 5px' }} onClick={() => setEditStudent(s)}>Edit</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : dataTab === 'students' && sViewMode === 'tree' ? (
+              <div>
+                {sGroupsByClass.map(g => {
+                  const isOpen = sExpandedGroups[g.id] ?? true;
+                  return (
+                    <div key={g.id} style={{ marginBottom: 8 }}>
+                      <div
+                        onClick={() => sToggleGroup(g.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 10px', background: 'var(--surface2)', borderRadius: 8, fontWeight: 700 }}
+                      >
+                        <span style={{ fontSize: '.72rem', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
+                        <span>{g.id === '__unassigned' ? '📂' : '🏫'} {g.name}</span>
+                        <span className="badge badge-info" style={{ fontSize: '.7rem', marginLeft: 'auto' }}>{g.students.length} student{g.students.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      {isOpen && (
+                        <div style={{ marginLeft: 24, marginTop: 4, borderLeft: '2px solid var(--border)', paddingLeft: 12 }}>
+                          {g.students.length === 0 ? (
+                            <div style={{ fontSize: '.78rem', color: 'var(--text-lt)', padding: '6px 0' }}>No students in this class</div>
+                          ) : g.students.map(s => (
+                            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', fontSize: '.82rem', borderBottom: '1px solid var(--border)' }}>
+                              <span>👤 {s.lastName}, {s.firstName} <span className="td-mono" style={{ fontSize: '.7rem', color: 'var(--text-lt)' }}>({s.studentCode})</span></span>
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: '.68rem', padding: '1px 6px' }} onClick={() => setEditStudent(s)}>Edit</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="table-wrap">
@@ -2094,7 +2274,7 @@ function SchoolDataBrowser({ schools }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map(r => (
+                    {sSorted.map(r => (
                       <tr key={r.id}>
                         <td className="td-mono" style={{ fontSize: '.68rem', color: 'var(--text-lt)', maxWidth: 80 }}>
                           {r.id?.substring(0, 10)}…
