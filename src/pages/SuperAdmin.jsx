@@ -34,8 +34,9 @@ import { createTeacherAccount } from '../services/teacherAuthService';
 import { writeRecord } from '../services/syncService';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
-import { db } from '../services/firebase';
+import { db, auth } from '../services/firebase';
 import { collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
+import { sendPasswordResetEmail } from 'firebase/auth';
 
 // ── HELPERS ───────────────────────────────────────────────────────
 
@@ -353,6 +354,11 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
   const [error,     setError]     = useState('');
   const [adminProfiles, setAdminProfiles] = useState([]);
   const [loadingAdmins, setLoadingAdmins] = useState(true);
+  const [resettingId, setResettingId] = useState(null);
+  const [resetMsg,    setResetMsg]    = useState(null);
+  const [editingContactEmail, setEditingContactEmail] = useState(false);
+  const [contactEmailDraft,   setContactEmailDraft]   = useState('');
+  const [savingContactEmail,  setSavingContactEmail]  = useState(false);
   const sub = school.subscription;
 
   useEffect(() => {
@@ -364,6 +370,37 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
       .finally(() => { if (active) setLoadingAdmins(false); });
     return () => { active = false; };
   }, [school.id]);
+
+  // Super admin can't see or know anyone's password (and shouldn't be able
+  // to) — but can trigger Firebase's own password-reset email to whatever
+  // address is on file, which is the safest way to help someone who's
+  // locked out without super admin ever handling credentials directly.
+  async function handleSendPasswordReset(profile) {
+    if (!profile.email) return;
+    setResettingId(profile.id);
+    setResetMsg(null);
+    try {
+      await sendPasswordResetEmail(auth, profile.email);
+      setResetMsg({ type: 'success', text: `✓ Password reset link sent to ${profile.email}.` });
+    } catch (err) {
+      setResetMsg({ type: 'danger', text: `Could not send reset link: ${err.message}` });
+    } finally {
+      setResettingId(null);
+    }
+  }
+
+  async function handleSaveContactEmail() {
+    setSavingContactEmail(true);
+    try {
+      await superAdminUpdateDoc('subscriptions', school.id, { adminEmail: contactEmailDraft.trim() });
+      setEditingContactEmail(false);
+      onRefresh && onRefresh();
+    } catch (err) {
+      alert('Failed to update contact email: ' + err.message);
+    } finally {
+      setSavingContactEmail(false);
+    }
+  }
 
   async function handleAddNote() {
     if (!note.trim()) return;
@@ -457,7 +494,6 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                     ['Days Left',   daysRemaining(sub)],
                     ['Expires',     new Date(sub.expiresAt).toLocaleDateString()],
                     ['Backup',      sub.backupAddon ? '✅ Yes' : '❌ No'],
-                    ['Admin Email', sub.adminEmail || '—'],
                   ].map(([k, v]) => (
                     <div key={k} style={{
                       display: 'flex', gap: 8, fontSize: '.83rem',
@@ -467,6 +503,46 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                       <span style={{ fontWeight: 600 }}>{v}</span>
                     </div>
                   ))}
+                  <div style={{
+                    display: 'flex', gap: 8, fontSize: '.83rem',
+                    borderBottom: '1px solid var(--border)', padding: '6px 0', alignItems: 'center',
+                  }}>
+                    <span style={{ color: 'var(--text-mid)', width: 110, flexShrink: 0 }}>Contact Email</span>
+                    {editingContactEmail ? (
+                      <div style={{ display: 'flex', gap: 6, flex: 1 }}>
+                        <input
+                          value={contactEmailDraft}
+                          onChange={e => setContactEmailDraft(e.target.value)}
+                          style={{ flex: 1, fontSize: '.82rem' }}
+                          autoFocus
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={savingContactEmail}
+                          onClick={handleSaveContactEmail}
+                        >
+                          {savingContactEmail ? '…' : 'Save'}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingContactEmail(false)}>✕</button>
+                      </div>
+                    ) : (
+                      <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {sub.adminEmail || '—'}
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: '.68rem', padding: '1px 6px' }}
+                          onClick={() => { setContactEmailDraft(sub.adminEmail || ''); setEditingContactEmail(true); }}
+                        >
+                          ✎ Edit
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '.7rem', color: 'var(--text-lt)', marginTop: 4 }}>
+                    This is a contact/display field only — it does <strong>not</strong> change the
+                    admin's actual login email. To fix a login-email typo, the admin must sign in and
+                    use Settings → Login &amp; Security (they'll need their current password).
+                  </div>
                 </>
               ) : (
                 <p style={{ color: 'var(--text-lt)', fontSize: '.84rem' }}>No subscription found</p>
@@ -486,7 +562,7 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
               <div className="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Last Login</th></tr>
+                    <tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Last Login</th><th>Help</th></tr>
                   </thead>
                   <tbody>
                     {adminProfiles.map(p => (
@@ -502,12 +578,34 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                         <td style={{ fontSize: '.78rem', color: 'var(--text-lt)' }}>
                           {p.lastLoginAt ? new Date(p.lastLoginAt).toLocaleString() : 'Never'}
                         </td>
+                        <td>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: '.7rem', padding: '2px 8px' }}
+                            disabled={!p.email || resettingId === p.id}
+                            onClick={() => handleSendPasswordReset(p)}
+                            title={p.email ? `Send a password reset link to ${p.email}` : 'No email on file'}
+                          >
+                            {resettingId === p.id ? '…' : '🔑 Reset Link'}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+            {resetMsg && (
+              <div className={`alert alert-${resetMsg.type}`} style={{ marginTop: 10, fontSize: '.82rem' }}>{resetMsg.text}</div>
+            )}
+            <div style={{ fontSize: '.74rem', color: 'var(--text-lt)', marginTop: 8 }}>
+              "Reset Link" sends a password-reset email to whatever address is on file — it works even
+              though super admin can't see or know anyone's password. It only helps if they still have
+              access to that inbox; if the email itself was mistyped at signup, they'll need to fix that
+              themselves via Settings → Login &amp; Security once logged in, or you can correct the
+              contact email below (this does <strong>not</strong> change their login credential, only
+              what's displayed here and used for notifications).
+            </div>
           </div>
 
           {sub?.paymentHistory?.length > 0 && (
