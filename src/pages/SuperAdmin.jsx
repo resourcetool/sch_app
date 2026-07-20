@@ -37,6 +37,10 @@ import * as XLSX from 'xlsx';
 import { db, auth } from '../services/firebase';
 import { collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import {
+  moveRecordToTrash, moveSchoolToTrash, getTrash,
+  restoreFromTrash, purgeTrashItem, purgeExpiredTrash, TRASH_RETENTION_DAYS,
+} from '../services/trashService';
 
 // ── HELPERS ───────────────────────────────────────────────────────
 
@@ -777,7 +781,151 @@ function PendingDeletionsPanel({ userProfile, onRefresh }) {
   );
 }
 
-// ── EMAIL COMPOSER PANEL ─────────────────────────────────────────
+// ── TRASH PANEL ──────────────────────────────────────────────────
+// Recycle bin for anything deleted from the Schools list or School Data
+// Browser. No Cloud Functions here, so nothing purges automatically —
+// "Purge Expired" is a manual button, not a scheduled job.
+function TrashPanel() {
+  const [items,     setItems]     = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [acting,    setActing]    = useState(null);
+  const [purging,   setPurging]   = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setItems(await getTrash()); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  function formatDate(ts) {
+    return ts ? new Date(ts).toLocaleString('en-GH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  }
+
+  function daysLeft(expiresAt) {
+    return Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+  }
+
+  async function handleRestore(item) {
+    const label = item.type === 'school' ? `school "${item.schoolName}"` : `"${item.label}" (${item.originalCollection})`;
+    if (!window.confirm(
+      `Restore ${label}?\n\n` +
+      (item.type === 'school'
+        ? `This recreates the school and all its data exactly as it was when deleted.\n\n` +
+          `⚠ If the Firebase Auth login accounts for this school have already been ` +
+          `removed (usually happens within seconds of deletion), those users will need ` +
+          `a password reset or a new account — their data comes back, but not automatically ` +
+          `their old login credential.`
+        : `This recreates the record with its original ID and all its original data.`)
+    )) return;
+    setActing(item.id);
+    try {
+      await restoreFromTrash(item.id);
+      setItems(list => list.filter(x => x.id !== item.id));
+      alert('✓ Restored.');
+    } catch (err) {
+      alert('Restore failed: ' + err.message);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function handlePurge(item) {
+    const label = item.type === 'school' ? `school "${item.schoolName}"` : `"${item.label}"`;
+    if (!window.confirm(
+      `Permanently delete ${label} from Trash?\n\nThis cannot be undone — there is no further recovery after this.`
+    )) return;
+    setActing(item.id);
+    try {
+      await purgeTrashItem(item.id);
+      setItems(list => list.filter(x => x.id !== item.id));
+    } catch (err) {
+      alert('Failed to purge: ' + err.message);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function handlePurgeExpired() {
+    const expiredCount = items.filter(i => daysLeft(i.expiresAt) <= 0).length;
+    if (expiredCount === 0) { alert('Nothing has expired yet.'); return; }
+    if (!window.confirm(`Permanently delete ${expiredCount} expired trash item(s)? This cannot be undone.`)) return;
+    setPurging(true);
+    try {
+      const n = await purgeExpiredTrash();
+      await load();
+      alert(`✓ Purged ${n} expired item(s).`);
+    } catch (err) {
+      alert('Purge failed: ' + err.message);
+    } finally {
+      setPurging(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#6a1b9a', marginBottom: 6 }}>♻️ Trash</div>
+            <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', margin: 0 }}>
+              Deleted schools and records land here for {TRASH_RETENTION_DAYS} days before they're
+              eligible for permanent removal. Nothing purges by itself — this project has no
+              scheduled background jobs, so expired items just sit here flagged until you click
+              "Purge Expired."
+            </p>
+          </div>
+          <button className="btn btn-danger btn-sm" onClick={handlePurgeExpired} disabled={purging}>
+            {purging ? '…' : '🧹 Purge Expired'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="card"><div className="spinner-center"><div className="spinner" /></div></div>
+      ) : items.length === 0 ? (
+        <div className="card"><div className="empty-state"><div className="icon">✨</div><p>Trash is empty.</p></div></div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {items.map(item => {
+            const left = daysLeft(item.expiresAt);
+            const expired = left <= 0;
+            return (
+              <div key={item.id} className="card" style={{ border: `1.5px solid ${expired ? '#bdbdbd' : '#6a1b9a'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {item.type === 'school' ? '🏫' : '📄'}{' '}
+                      {item.type === 'school' ? item.schoolName : item.label}
+                      <span className="badge badge-neutral" style={{ fontSize: '.68rem' }}>
+                        {item.type === 'school' ? `Full school (${item.totalRecords} records)` : item.originalCollection}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>
+                      Deleted {formatDate(item.deletedAt)} by {item.deletedBy}
+                    </div>
+                    <div style={{ fontSize: '.78rem', color: expired ? '#c62828' : 'var(--text-lt)', marginTop: 2 }}>
+                      {expired ? '⚠ Expired — eligible for permanent purge' : `${left} day${left !== 1 ? 's' : ''} left to restore`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <button className="btn btn-success btn-sm" onClick={() => handleRestore(item)} disabled={acting === item.id}>
+                      ↩ Restore
+                    </button>
+                    <button className="btn btn-danger btn-sm" onClick={() => handlePurge(item)} disabled={acting === item.id}>
+                      🔥 Delete Forever
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 function EmailComposerPanel({ schools, userProfile }) {
   const [mode,      setMode]      = useState('individual'); // 'individual' | 'bulk'
   const [toEmail,   setToEmail]   = useState('');
@@ -1505,6 +1653,7 @@ const DATA_TABS = [
 ];
 
 function SchoolDataBrowser({ schools }) {
+  const { userProfile } = useAuth();
   const [selectedSchoolId, setSelectedSchoolId] = useState('');
   const [data,             setData]             = useState(null);
   const [loadingData,      setLoadingData]       = useState(false);
@@ -1559,11 +1708,12 @@ function SchoolDataBrowser({ schools }) {
 
   async function handleDeleteRecord(collectionName, docId, label) {
     if (!window.confirm(
-      `SUPER ADMIN — Delete record from "${collectionName}"?\n\n` +
-      `"${label}"\n\nThis is a PERMANENT hard-delete from Firestore. Cannot be undone.`
+      `Delete record from "${collectionName}"?\n\n"${label}"\n\n` +
+      `This moves it to the Trash (♻️ Trash tab) instead of deleting it outright — ` +
+      `it can be restored from there within ${TRASH_RETENTION_DAYS} days.`
     )) return;
     try {
-      await superAdminDeleteDoc(collectionName, docId);
+      await moveRecordToTrash(collectionName, docId, userProfile?.email);
       await loadSchoolData(selectedSchoolId); // refresh
     } catch (err) {
       alert('Delete failed: ' + err.message);
@@ -1715,30 +1865,35 @@ function SchoolDataBrowser({ schools }) {
     const first = window.confirm(
       `⚠ WARNING — Delete ENTIRE school?\n\n` +
       `School: ${school.name}\n\n` +
-      `This will permanently delete:\n` +
+      `This will delete:\n` +
       `• All students, teachers, classes, subjects, scores, results\n` +
       `• The school account and subscription in Firestore\n` +
       `• ALL Firebase Auth login accounts (emails freed for re-use)\n\n` +
-      `Auth account deletion runs automatically via Cloud Function.\n` +
-      `This CANNOT be undone. Click OK to see final confirmation.`
+      `Auth account deletion runs automatically via Cloud Function.\n\n` +
+      `A full snapshot is saved to ♻️ Trash first, so this CAN be undone within ` +
+      `${TRASH_RETENTION_DAYS} days — EXCEPT the Auth login accounts: once the Cloud ` +
+      `Function has deleted those (usually within seconds), restoring brings back all ` +
+      `the data but affected users will need a fresh password reset / new account to log ` +
+      `in again. Click OK to see final confirmation.`
     );
     if (!first) return;
     const confirm2 = window.prompt(
-      `Type the school name exactly to confirm permanent deletion:\n\n${school.name}`
+      `Type the school name exactly to confirm deletion:\n\n${school.name}`
     );
     if (confirm2?.trim() !== school.name?.trim()) {
       alert('School name did not match. Deletion cancelled.');
       return;
     }
     try {
-      await superAdminDeleteSchool(school.id);
+      await moveSchoolToTrash(school.id, userProfile?.email);
       setData(null);
       setSelectedSchoolId('');
       alert(
-        `✓ School "${school.name}" and all Firestore data deleted.\n\n` +
+        `✓ School "${school.name}" deleted and saved to Trash.\n\n` +
         `Firebase Auth accounts for this school have been queued for deletion ` +
         `and will be removed within seconds by the Cloud Function. ` +
-        `All their emails are now free for re-registration.`
+        `All their emails are now free for re-registration.\n\n` +
+        `To undo this, go to the ♻️ Trash tab within ${TRASH_RETENTION_DAYS} days.`
       );
     } catch (err) {
       alert('Delete school failed: ' + err.message);
@@ -2541,8 +2696,39 @@ export default function SuperAdmin() {
   }, 0);
 
   const activeSchools   = schools.filter(s => { const st = getSubscriptionStatus(s.subscription); return st === 'active' || st === 'expiring'; });
-  const expiringSchools = schools.filter(s => getSubscriptionStatus(s.subscription) === 'expiring');
+  const expiringSchools = schools
+    .filter(s => getSubscriptionStatus(s.subscription) === 'expiring')
+    .sort((a, b) => daysRemaining(a.subscription) - daysRemaining(b.subscription));
+  // Trial schools approaching their 21-day cutoff use a DIFFERENT status
+  // string ('trial_ending') than paid plans ('expiring') — they used to be
+  // completely invisible in the Alerts tab because of that mismatch.
+  const trialEndingSchools = schools
+    .filter(s => getSubscriptionStatus(s.subscription) === 'trial_ending')
+    .sort((a, b) => daysRemaining(a.subscription) - daysRemaining(b.subscription));
+  const graceSchools = schools
+    .filter(s => getSubscriptionStatus(s.subscription) === 'grace')
+    .sort((a, b) => daysRemaining(a.subscription) - daysRemaining(b.subscription));
   const pendingRequests = requests.filter(r => r.status === 'pending');
+
+  // "Mark contacted" tracking — persisted locally (per super admin browser).
+  // No new Firestore collection needed for this; it's just a reminder aid,
+  // not data that needs to sync across devices or be historically audited
+  // (the WhatsApp/notes/activity log already cover real record-keeping).
+  const [contactedMap, setContactedMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('superadmin_contacted') || '{}'); }
+    catch { return {}; }
+  });
+  function markContacted(schoolId) {
+    setContactedMap(m => {
+      const next = { ...m, [schoolId]: Date.now() };
+      localStorage.setItem('superadmin_contacted', JSON.stringify(next));
+      return next;
+    });
+  }
+  function contactedToday(schoolId) {
+    const ts = contactedMap[schoolId];
+    return ts && (Date.now() - ts) < 24 * 60 * 60 * 1000;
+  }
 
   const filteredSchools = schools.filter(s =>
     !search ||
@@ -2655,6 +2841,10 @@ export default function SuperAdmin() {
             style={{ color: tab === 'deletions' ? '#fff' : '', background: tab === 'deletions' ? '#c62828' : '' }}>
             🗑 Deletions
           </button>
+          <button className={`tab${tab === 'trash' ? ' active' : ''}`} onClick={() => setTab('trash')}
+            style={{ color: tab === 'trash' ? '#fff' : '', background: tab === 'trash' ? '#6a1b9a' : '' }}>
+            ♻️ Trash
+          </button>
           <button className={`tab${tab === 'requests' ? ' active' : ''}`} onClick={() => setTab('requests')}>
             Requests {pendingRequests.length > 0 && (
               <span className="badge badge-danger" style={{ marginLeft: 6 }}>{pendingRequests.length}</span>
@@ -2664,8 +2854,8 @@ export default function SuperAdmin() {
             Access Codes
           </button>
           <button className={`tab${tab === 'alerts' ? ' active' : ''}`} onClick={() => setTab('alerts')}>
-            Alerts {expiringSchools.length > 0 && (
-              <span className="badge badge-warning" style={{ marginLeft: 6 }}>{expiringSchools.length}</span>
+            Alerts {(expiringSchools.length + trialEndingSchools.length + graceSchools.length) > 0 && (
+              <span className="badge badge-warning" style={{ marginLeft: 6 }}>{expiringSchools.length + trialEndingSchools.length + graceSchools.length}</span>
             )}
           </button>
           <button
@@ -2918,7 +3108,7 @@ export default function SuperAdmin() {
             {/* ── ALERTS TAB ── */}
             {tab === 'alerts' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {expiringSchools.length === 0 && schools.filter(s => getSubscriptionStatus(s.subscription) === 'grace').length === 0 ? (
+                {expiringSchools.length === 0 && trialEndingSchools.length === 0 && graceSchools.length === 0 ? (
                   <div className="card">
                     <div className="empty-state">
                       <div className="icon">✅</div>
@@ -2927,21 +3117,65 @@ export default function SuperAdmin() {
                   </div>
                 ) : (
                   <>
-                    {expiringSchools.map(s => (
-                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                          <span style={{ fontSize: '1.5rem' }}>⏰</span>
-                          <div style={{ flex: 1 }}>
+                    {graceSchools.length > 0 && (
+                      <div style={{ fontWeight: 700, color: 'var(--danger)', fontSize: '.82rem' }}>
+                        🔒 Locked / Past Due — {graceSchools.length}
+                      </div>
+                    )}
+                    {graceSchools.map(s => (
+                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--danger)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '1.5rem' }}>🔒</span>
+                          <div style={{ flex: 1, minWidth: 160 }}>
                             <div style={{ fontWeight: 700 }}>{s.name}</div>
-                            <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>
-                              Expires in <strong>{daysRemaining(s.subscription)} days</strong> · {s.subscription?.adminEmail}
+                            <div style={{ fontSize: '.8rem', color: 'var(--danger)' }}>
+                              In grace period — system locked for school admin
                             </div>
+                            {contactedToday(s.id) && (
+                              <div style={{ fontSize: '.72rem', color: 'var(--success)' }}>✓ Contacted today</div>
+                            )}
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <a
                               href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
                               target="_blank" rel="noreferrer"
                               className="btn btn-success btn-sm"
+                              onClick={() => markContacted(s.id)}
+                            >
+                              📱 Remind
+                            </a>
+                            <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-danger btn-sm">
+                              Renew Now
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {expiringSchools.length > 0 && (
+                      <div style={{ fontWeight: 700, color: 'var(--warning)', fontSize: '.82rem', marginTop: graceSchools.length ? 8 : 0 }}>
+                        ⏰ Expiring Soon (paid plans) — {expiringSchools.length}
+                      </div>
+                    )}
+                    {expiringSchools.map(s => (
+                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '1.5rem' }}>⏰</span>
+                          <div style={{ flex: 1, minWidth: 160 }}>
+                            <div style={{ fontWeight: 700 }}>{s.name}</div>
+                            <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>
+                              Expires in <strong>{daysRemaining(s.subscription)} days</strong> · {s.subscription?.adminEmail}
+                            </div>
+                            {contactedToday(s.id) && (
+                              <div style={{ fontSize: '.72rem', color: 'var(--success)' }}>✓ Contacted today</div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <a
+                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
+                              target="_blank" rel="noreferrer"
+                              className="btn btn-success btn-sm"
+                              onClick={() => markContacted(s.id)}
                             >
                               📱 Remind
                             </a>
@@ -2952,19 +3186,38 @@ export default function SuperAdmin() {
                         </div>
                       </div>
                     ))}
-                    {schools.filter(s => getSubscriptionStatus(s.subscription) === 'grace').map(s => (
-                      <div key={s.id} className="card" style={{ borderLeft: '4px solid var(--danger)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                          <span style={{ fontSize: '1.5rem' }}>🔒</span>
-                          <div style={{ flex: 1 }}>
+
+                    {trialEndingSchools.length > 0 && (
+                      <div style={{ fontWeight: 700, color: '#2980b9', fontSize: '.82rem', marginTop: (graceSchools.length || expiringSchools.length) ? 8 : 0 }}>
+                        🎁 Trial Ending Soon — {trialEndingSchools.length}
+                      </div>
+                    )}
+                    {trialEndingSchools.map(s => (
+                      <div key={s.id} className="card" style={{ borderLeft: '4px solid #2980b9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '1.5rem' }}>🎁</span>
+                          <div style={{ flex: 1, minWidth: 160 }}>
                             <div style={{ fontWeight: 700 }}>{s.name}</div>
-                            <div style={{ fontSize: '.8rem', color: 'var(--danger)' }}>
-                              In grace period — system locked for school admin
+                            <div style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>
+                              Trial ends in <strong>{daysRemaining(s.subscription)} days</strong> · {s.subscription?.adminEmail}
                             </div>
+                            {contactedToday(s.id) && (
+                              <div style={{ fontSize: '.72rem', color: 'var(--success)' }}>✓ Contacted today</div>
+                            )}
                           </div>
-                          <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-danger btn-sm">
-                            Renew Now
-                          </button>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <a
+                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
+                              target="_blank" rel="noreferrer"
+                              className="btn btn-success btn-sm"
+                              onClick={() => markContacted(s.id)}
+                            >
+                              📱 Remind
+                            </a>
+                            <button onClick={() => { setSelected(s); setModal('renew'); }} className="btn btn-primary btn-sm">
+                              Convert to Paid
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2987,6 +3240,11 @@ export default function SuperAdmin() {
         {/* ── PENDING DELETIONS ── */}
         {tab === 'deletions' && (
           <PendingDeletionsPanel userProfile={userProfile} onRefresh={load} />
+        )}
+
+        {/* ── TRASH ── */}
+        {tab === 'trash' && (
+          <TrashPanel />
         )}
 
         {/* ── EMAIL COMPOSER ── */}
