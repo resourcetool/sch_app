@@ -148,19 +148,30 @@ export default function Classes() {
   }
 
   // Removing a class is a HARD delete (Firestore rules allow it for admins).
-  // Safety check: warn if students are currently enrolled, since deleting
-  // the class would leave their enrollment pointing at a class that no
-  // longer exists. Admin must confirm explicitly to proceed anyway.
+  // Enrollments pointing at this class are cascade-deleted too, so nothing
+  // is left silently pointing at a class that no longer exists — this is
+  // exactly the gap that made "renaming/changing a class" look like it
+  // broke enrollments: it wasn't the rename itself (renaming only changes
+  // the class's display name, never its ID — enrollments always reference
+  // the ID, so a plain rename is always safe), it was deleting a class
+  // that still had students enrolled in it and never cleaning them up.
   async function handleRemoveClass(cls) {
     const enrolledCount = enrollCounts[cls.id] || 0;
     const warning = enrolledCount > 0
       ? `${cls.name} has ${enrolledCount} student(s) currently enrolled.\n\n` +
-        `Deleting this class will NOT delete those students, but they will lose ` +
-        `their class assignment. Their score history is preserved.\n\n` +
+        `Deleting this class will NOT delete those students, but their ` +
+        `enrollment in "${cls.name}" will be removed too, so they end up ` +
+        `Not Enrolled (rather than left pointing at a deleted class). ` +
+        `Their score history is preserved.\n\n` +
         `Are you sure you want to delete "${cls.name}"?`
       : `Delete class "${cls.name}"? This cannot be undone.`;
     if (!window.confirm(warning)) return;
     try {
+      const staleEnrollments = await idbGetAll('enrollments', 'schoolId', schoolId);
+      const toRemove = staleEnrollments.filter(e => e.classId === cls.id);
+      for (const e of toRemove) {
+        await deleteRecord('enrollments', e.id);
+      }
       await deleteRecord('classes', cls.id);
       await refresh();
     } catch (err) {
