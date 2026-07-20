@@ -74,7 +74,7 @@ function AccountDeletionPanel({ school, schoolId, subscription }) {
           <strong>Changed your mind?</strong> You can cancel this request before the deletion date by contacting us on WhatsApp: 0549548274
         </div>
         <a
-          href="https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolMS data deletion request."
+          href="https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolPilot data deletion request."
           target="_blank" rel="noreferrer"
           className="btn btn-ghost btn-sm"
           style={{ textDecoration: 'none' }}
@@ -313,7 +313,7 @@ function SubscriptionTab({ subscription }) {
 
         <div style={{ marginTop: 16, textAlign: 'center' }}>
           <a
-            href={`https://wa.me/233549548274?text=${encodeURIComponent(`Hello, I'd like to renew/change my SchoolMS plan — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`}
+            href={`https://wa.me/233549548274?text=${encodeURIComponent(`Hello, I'd like to renew/change my SchoolPilot plan — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`}
             target="_blank" rel="noreferrer"
             className="btn btn-success"
             style={{ textDecoration: 'none' }}
@@ -321,6 +321,130 @@ function SubscriptionTab({ subscription }) {
             📱 Message Us on WhatsApp to Renew or Change Plan
           </a>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── LOGIN & SECURITY ─────────────────────────────────────────────
+// Lets the admin fix their own login email (e.g. a typo made at signup)
+// and change their password — self-service, no super admin needed.
+// Firebase requires a "recent login" for both of these sensitive
+// changes, so both forms ask for the CURRENT password first.
+function LoginSecurityPanel() {
+  const { user, changeEmail, changePassword } = useAuth();
+
+  const [newEmail,  setNewEmail]  = useState('');
+  const [emailPwd,  setEmailPwd]  = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailMsg,  setEmailMsg]  = useState({ type: '', text: '' });
+
+  const [curPwd,    setCurPwd]    = useState('');
+  const [newPwd,    setNewPwd]    = useState('');
+  const [confirmPwd,setConfirmPwd]= useState('');
+  const [pwdSaving, setPwdSaving] = useState(false);
+  const [pwdMsg,    setPwdMsg]    = useState({ type: '', text: '' });
+
+  function friendlyAuthError(err) {
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      return 'That current password is incorrect.';
+    }
+    if (err.code === 'auth/email-already-in-use') return 'That email is already in use by another account.';
+    if (err.code === 'auth/invalid-email')         return 'That doesn\'t look like a valid email address.';
+    if (err.code === 'auth/weak-password')          return 'Password must be at least 6 characters.';
+    if (err.code === 'auth/requires-recent-login')  return 'For security, please log out and back in, then try again.';
+    if (err.code === 'auth/too-many-requests')      return 'Too many attempts. Please wait a few minutes and try again.';
+    return err.message;
+  }
+
+  async function handleChangeEmail(e) {
+    e.preventDefault();
+    setEmailMsg({ type: '', text: '' });
+    if (!newEmail.trim() || !emailPwd) return;
+    if (newEmail.trim().toLowerCase() === user?.email?.toLowerCase()) {
+      setEmailMsg({ type: 'danger', text: 'That\'s already your current email.' });
+      return;
+    }
+    setEmailSaving(true);
+    try {
+      await changeEmail(emailPwd, newEmail.trim());
+      setEmailMsg({ type: 'success', text: `✓ Login email updated to ${newEmail.trim()}. Use this new email next time you log in.` });
+      setNewEmail(''); setEmailPwd('');
+    } catch (err) {
+      setEmailMsg({ type: 'danger', text: friendlyAuthError(err) });
+    } finally {
+      setEmailSaving(false);
+    }
+  }
+
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setPwdMsg({ type: '', text: '' });
+    if (!curPwd || !newPwd || !confirmPwd) return;
+    if (newPwd.length < 6) { setPwdMsg({ type: 'danger', text: 'New password must be at least 6 characters.' }); return; }
+    if (newPwd !== confirmPwd) { setPwdMsg({ type: 'danger', text: 'New passwords do not match.' }); return; }
+    setPwdSaving(true);
+    try {
+      await changePassword(curPwd, newPwd);
+      setPwdMsg({ type: 'success', text: '✓ Password updated. Use your new password next time you log in.' });
+      setCurPwd(''); setNewPwd(''); setConfirmPwd('');
+    } catch (err) {
+      setPwdMsg({ type: 'danger', text: friendlyAuthError(err) });
+    } finally {
+      setPwdSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 500 }}>
+      <div className="card">
+        <div className="card-header"><span className="card-title">Change Login Email</span></div>
+        <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', marginBottom: 14 }}>
+          Current login email: <strong>{user?.email}</strong>. Made a typo when you signed up, or just
+          need to switch to a different address? Change it here — no need to contact support.
+        </p>
+        {emailMsg.text && <div className={`alert alert-${emailMsg.type}`} style={{ marginBottom: 12 }}>{emailMsg.text}</div>}
+        <form onSubmit={handleChangeEmail} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="form-group">
+            <label>New Email *</label>
+            <input type="email" required value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="new.email@example.com" />
+          </div>
+          <div className="form-group">
+            <label>Current Password *</label>
+            <input type="password" required value={emailPwd} onChange={e => setEmailPwd(e.target.value)} placeholder="Confirm it's you" />
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={emailSaving} style={{ alignSelf: 'flex-start' }}>
+            {emailSaving ? 'Updating…' : 'Update Email'}
+          </button>
+        </form>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><span className="card-title">Change Password</span></div>
+        {pwdMsg.text && <div className={`alert alert-${pwdMsg.type}`} style={{ marginBottom: 12 }}>{pwdMsg.text}</div>}
+        <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="form-group">
+            <label>Current Password *</label>
+            <input type="password" required value={curPwd} onChange={e => setCurPwd(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>New Password *</label>
+            <input type="password" required minLength={6} value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="Min 6 characters" />
+          </div>
+          <div className="form-group">
+            <label>Confirm New Password *</label>
+            <input type="password" required value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={pwdSaving} style={{ alignSelf: 'flex-start' }}>
+            {pwdSaving ? 'Updating…' : 'Update Password'}
+          </button>
+        </form>
+      </div>
+
+      <div style={{ fontSize: '.78rem', color: 'var(--text-lt)' }}>
+        Forgotten your current password entirely and can't log in at all? Use{' '}
+        <Link to="/login" style={{ color: 'var(--navy)', fontWeight: 700 }}>"Forgot password?" on the login page</Link>{' '}
+        instead — a reset link will be sent to your current login email above.
       </div>
     </div>
   );
@@ -438,6 +562,7 @@ export default function Settings() {
         <button className={`tab${tab === 'grading' ? ' active' : ''}`} onClick={() => setTab('grading')}>Grading Scale</button>
         <button className={`tab${tab === 'promotion'?' active' : ''}`} onClick={() => setTab('promotion')}>Promotion Rules</button>
         <button className={`tab${tab === 'subscription' ? ' active' : ''}`} onClick={() => setTab('subscription')}>💳 Subscription &amp; Pricing</button>
+        <button className={`tab${tab === 'security' ? ' active' : ''}`} onClick={() => setTab('security')}>🔐 Login &amp; Security</button>
         <button className={`tab${tab === 'account' ? ' active' : ''}`} onClick={() => setTab('account')} style={{ color: tab === 'account' ? '#ef5350' : '' }}>⚠ Account</button>
       </div>
 
@@ -704,6 +829,11 @@ export default function Settings() {
       {/* ── SUBSCRIPTION & PRICING ── */}
       {tab === 'subscription' && (
         <SubscriptionTab subscription={subscription} />
+      )}
+
+      {/* ── LOGIN & SECURITY ── */}
+      {tab === 'security' && (
+        <LoginSecurityPanel />
       )}
 
       {/* ── ACCOUNT (DELETION) ── */}
