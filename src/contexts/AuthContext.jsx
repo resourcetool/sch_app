@@ -16,6 +16,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, deleteUser,
+  EmailAuthProvider, reauthenticateWithCredential,
+  updateEmail as fbUpdateEmail, updatePassword as fbUpdatePassword,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db }              from '../services/firebase';
@@ -129,6 +131,46 @@ export function AuthProvider({ children }) {
   }
 
   /**
+   * Lets the CURRENTLY signed-in user change their own login email.
+   * Requires their current password (Firebase requires a "recent login"
+   * for sensitive account changes — this re-authenticates first so the
+   * change isn't rejected with auth/requires-recent-login).
+   *
+   * Keeps the Firestore users/{uid} profile in sync, and — for admins —
+   * also updates the denormalized adminEmail shown across the app
+   * (school lists, super admin views, etc). If that second write fails
+   * for any reason, the login email itself has still been changed
+   * successfully; only the display copy would be stale, which is safe.
+   */
+  async function changeEmail(currentPassword, newEmail) {
+    if (!auth.currentUser) throw new Error('You must be signed in.');
+    const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+    await reauthenticateWithCredential(auth.currentUser, cred);
+    await fbUpdateEmail(auth.currentUser, newEmail.trim());
+
+    await setDoc(doc(db, 'users', auth.currentUser.uid), { email: newEmail.trim() }, { merge: true });
+    if (userProfile?.schoolId) {
+      try {
+        await setDoc(doc(db, 'subscriptions', userProfile.schoolId), { adminEmail: newEmail.trim() }, { merge: true });
+      } catch (err) {
+        console.warn('Login email changed, but could not sync display email:', err.message);
+      }
+    }
+    setUserProfile(p => p ? { ...p, email: newEmail.trim() } : p);
+  }
+
+  /**
+   * Lets the currently signed-in user change their own password.
+   * Same re-authentication requirement as changeEmail.
+   */
+  async function changePassword(currentPassword, newPassword) {
+    if (!auth.currentUser) throw new Error('You must be signed in.');
+    const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+    await reauthenticateWithCredential(auth.currentUser, cred);
+    await fbUpdatePassword(auth.currentUser, newPassword);
+  }
+
+  /**
    * registerAdmin — ATOMIC account creation.
    *
    * If any Firestore write fails after the Firebase Auth account is created,
@@ -201,7 +243,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, userProfile, loading, syncComplete,
-      login, logout, registerAdmin,
+      login, logout, registerAdmin, changeEmail, changePassword,
     }}>
       {loading ? (
         <div style={{
