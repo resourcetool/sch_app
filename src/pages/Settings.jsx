@@ -12,6 +12,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import ContactListEditor from '../components/common/ContactListEditor';
 import { useSchool } from '../contexts/SchoolContext';
 import { useAuth }  from '../contexts/AuthContext';
 import { defaultGradingScale }         from '../services/scoreService';
@@ -332,12 +333,13 @@ function SubscriptionTab({ subscription }) {
 // Firebase requires a "recent login" for both of these sensitive
 // changes, so both forms ask for the CURRENT password first.
 function LoginSecurityPanel() {
-  const { user, changeEmail, changePassword } = useAuth();
+  const { user, userProfile, changeEmail, changePassword, cancelPendingEmail } = useAuth();
 
   const [newEmail,  setNewEmail]  = useState('');
   const [emailPwd,  setEmailPwd]  = useState('');
   const [emailSaving, setEmailSaving] = useState(false);
   const [emailMsg,  setEmailMsg]  = useState({ type: '', text: '' });
+  const [cancelling, setCancelling] = useState(false);
 
   const [curPwd,    setCurPwd]    = useState('');
   const [newPwd,    setNewPwd]    = useState('');
@@ -354,7 +356,21 @@ function LoginSecurityPanel() {
     if (err.code === 'auth/weak-password')          return 'Password must be at least 6 characters.';
     if (err.code === 'auth/requires-recent-login')  return 'For security, please log out and back in, then try again.';
     if (err.code === 'auth/too-many-requests')      return 'Too many attempts. Please wait a few minutes and try again.';
-    return err.message;
+    if (err.code === 'auth/operation-not-allowed') {
+      return 'Email changes aren\'t enabled on this project yet — this needs "Email address change" turned on in Firebase Console → Authentication → Templates. Contact support if this keeps happening.';
+    }
+    return `${err.message}${err.code ? ` (${err.code})` : ''}`;
+  }
+
+  async function handleCancelPending() {
+    setCancelling(true);
+    try {
+      await cancelPendingEmail();
+    } catch (err) {
+      setEmailMsg({ type: 'danger', text: friendlyAuthError(err) });
+    } finally {
+      setCancelling(false);
+    }
   }
 
   async function handleChangeEmail(e) {
@@ -368,7 +384,11 @@ function LoginSecurityPanel() {
     setEmailSaving(true);
     try {
       await changeEmail(emailPwd, newEmail.trim());
-      setEmailMsg({ type: 'success', text: `✓ Login email updated to ${newEmail.trim()}. Use this new email next time you log in.` });
+      setEmailMsg({
+        type: 'success',
+        text: `✓ We've sent a confirmation link to ${newEmail.trim()}. Open it there to finish the change — ` +
+              `keep logging in with your current email (${user?.email}) until you do. Check spam if it doesn't arrive in a few minutes.`,
+      });
       setNewEmail(''); setEmailPwd('');
     } catch (err) {
       setEmailMsg({ type: 'danger', text: friendlyAuthError(err) });
@@ -403,6 +423,19 @@ function LoginSecurityPanel() {
           Current login email: <strong>{user?.email}</strong>. Made a typo when you signed up, or just
           need to switch to a different address? Change it here — no need to contact support.
         </p>
+        {userProfile?.pendingEmail && (
+          <div className="alert alert-warning" style={{ marginBottom: 14 }}>
+            ⏳ A confirmation link was sent to <strong>{userProfile.pendingEmail}</strong>
+            {userProfile.pendingEmailAt ? ` on ${new Date(userProfile.pendingEmailAt).toLocaleString()}` : ''}.
+            Click it there to complete the change. Didn't get it? Check spam, or{' '}
+            <button
+              type="button" onClick={handleCancelPending} disabled={cancelling}
+              style={{ background: 'none', border: 'none', color: 'var(--navy)', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+            >
+              cancel and try again
+            </button>.
+          </div>
+        )}
         {emailMsg.text && <div className={`alert alert-${emailMsg.type}`} style={{ marginBottom: 12 }}>{emailMsg.text}</div>}
         <form onSubmit={handleChangeEmail} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="form-group">
@@ -414,7 +447,7 @@ function LoginSecurityPanel() {
             <input type="password" required value={emailPwd} onChange={e => setEmailPwd(e.target.value)} placeholder="Confirm it's you" />
           </div>
           <button type="submit" className="btn btn-primary" disabled={emailSaving} style={{ alignSelf: 'flex-start' }}>
-            {emailSaving ? 'Updating…' : 'Update Email'}
+            {emailSaving ? 'Sending link…' : userProfile?.pendingEmail ? 'Send a New Link' : 'Send Confirmation Link'}
           </button>
         </form>
       </div>
@@ -611,6 +644,33 @@ export default function Settings() {
               <div className="form-group">
                 <label>Motto</label>
                 <input value={sf.motto || ''} onChange={e => up('motto', e.target.value)} />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 700, color: 'var(--navy)', fontSize: '.9rem', marginBottom: 4 }}>
+                Additional Contacts
+              </div>
+              <p style={{ fontSize: '.8rem', color: 'var(--text-mid)', marginBottom: 14 }}>
+                Add more people who should receive renewal reminders and be reachable for support —
+                e.g. an assistant admin or bursar. These are separate from your own login email above
+                (Login &amp; Security) and don't affect who can sign in.
+              </p>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: '.8rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>Emails</label>
+                <ContactListEditor
+                  type="email"
+                  items={sf.contactEmails || []}
+                  onChange={list => up('contactEmails', list)}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '.8rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>Phone Numbers</label>
+                <ContactListEditor
+                  type="phone"
+                  items={sf.contactPhones || []}
+                  onChange={list => up('contactPhones', list)}
+                />
               </div>
             </div>
             <div style={{ marginTop: 20 }}>
