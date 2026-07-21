@@ -37,6 +37,7 @@ import * as XLSX from 'xlsx';
 import { db, auth } from '../services/firebase';
 import { collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import ContactListEditor from '../components/common/ContactListEditor';
 import {
   moveRecordToTrash, moveSchoolToTrash, getTrash,
   restoreFromTrash, purgeTrashItem, purgeExpiredTrash, TRASH_RETENTION_DAYS,
@@ -360,10 +361,11 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [resettingId, setResettingId] = useState(null);
   const [resetMsg,    setResetMsg]    = useState(null);
-  const [editingContactEmail, setEditingContactEmail] = useState(false);
-  const [contactEmailDraft,   setContactEmailDraft]   = useState('');
-  const [savingContactEmail,  setSavingContactEmail]  = useState(false);
+  const [savingContacts, setSavingContacts] = useState(false);
+  const [contactsError,  setContactsError]  = useState('');
   const sub = school.subscription;
+  const contactEmails = school.contactEmails || [];
+  const contactPhones = school.contactPhones || [];
 
   useEffect(() => {
     let active = true;
@@ -393,16 +395,28 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
     }
   }
 
-  async function handleSaveContactEmail() {
-    setSavingContactEmail(true);
+  async function handleSaveContacts(next) {
+    setSavingContacts(true);
+    setContactsError('');
     try {
-      await superAdminUpdateDoc('subscriptions', school.id, { adminEmail: contactEmailDraft.trim() });
-      setEditingContactEmail(false);
+      await superAdminUpdateDoc('schools', school.id, {
+        contactEmails: next.contactEmails,
+        contactPhones: next.contactPhones,
+      });
       onRefresh && onRefresh();
     } catch (err) {
-      alert('Failed to update contact email: ' + err.message);
+      // Show the real Firebase error code, not just a generic message —
+      // this used to fail silently/unclearly. Common causes: the
+      // firestore.rules deployed to the project are out of date (redeploy
+      // needed), or a network/offline issue.
+      setContactsError(
+        `Failed to save: ${err.message}${err.code ? ` (${err.code})` : ''}` +
+        (err.code === 'permission-denied'
+          ? ' — this usually means the Firestore rules deployed to this project are out of date. Redeploy firestore.rules and try again.'
+          : '')
+      );
     } finally {
-      setSavingContactEmail(false);
+      setSavingContacts(false);
     }
   }
 
@@ -507,50 +521,39 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                       <span style={{ fontWeight: 600 }}>{v}</span>
                     </div>
                   ))}
-                  <div style={{
-                    display: 'flex', gap: 8, fontSize: '.83rem',
-                    borderBottom: '1px solid var(--border)', padding: '6px 0', alignItems: 'center',
-                  }}>
-                    <span style={{ color: 'var(--text-mid)', width: 110, flexShrink: 0 }}>Contact Email</span>
-                    {editingContactEmail ? (
-                      <div style={{ display: 'flex', gap: 6, flex: 1 }}>
-                        <input
-                          value={contactEmailDraft}
-                          onChange={e => setContactEmailDraft(e.target.value)}
-                          style={{ flex: 1, fontSize: '.82rem' }}
-                          autoFocus
-                        />
-                        <button
-                          className="btn btn-primary btn-sm"
-                          disabled={savingContactEmail}
-                          onClick={handleSaveContactEmail}
-                        >
-                          {savingContactEmail ? '…' : 'Save'}
-                        </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingContactEmail(false)}>✕</button>
-                      </div>
-                    ) : (
-                      <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {sub.adminEmail || '—'}
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: '.68rem', padding: '1px 6px' }}
-                          onClick={() => { setContactEmailDraft(sub.adminEmail || ''); setEditingContactEmail(true); }}
-                        >
-                          ✎ Edit
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '.7rem', color: 'var(--text-lt)', marginTop: 4 }}>
-                    This is a contact/display field only — it does <strong>not</strong> change the
-                    admin's actual login email. To fix a login-email typo, the admin must sign in and
-                    use Settings → Login &amp; Security (they'll need their current password).
-                  </div>
                 </>
               ) : (
                 <p style={{ color: 'var(--text-lt)', fontSize: '.84rem' }}>No subscription found</p>
               )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <div style={{ fontWeight: 700, color: 'var(--navy)' }}>Contacts</div>
+              {savingContacts && <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>Saving…</span>}
+            </div>
+            <p style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 10 }}>
+              Display/contact info only — editing this here does <strong>not</strong> change anyone's
+              actual login email or password. To fix a login-email typo, the admin must sign in
+              themselves and use Settings → Login &amp; Security.
+            </p>
+            {contactsError && <div className="alert alert-danger" style={{ marginBottom: 10, fontSize: '.8rem' }}>{contactsError}</div>}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: '.78rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>Emails</label>
+              <ContactListEditor
+                type="email"
+                items={contactEmails}
+                onChange={list => handleSaveContacts({ contactEmails: list, contactPhones })}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '.78rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>Phone Numbers</label>
+              <ContactListEditor
+                type="phone"
+                items={contactPhones}
+                onChange={list => handleSaveContacts({ contactEmails, contactPhones: list })}
+              />
             </div>
           </div>
 
@@ -3137,7 +3140,7 @@ export default function SuperAdmin() {
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <a
-                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
+                              href={`https://wa.me/233${(s.contactPhones?.[0]?.value || s.subscription?.adminPhone || '').replace(/^0/, '')}`}
                               target="_blank" rel="noreferrer"
                               className="btn btn-success btn-sm"
                               onClick={() => markContacted(s.id)}
@@ -3172,7 +3175,7 @@ export default function SuperAdmin() {
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <a
-                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
+                              href={`https://wa.me/233${(s.contactPhones?.[0]?.value || s.subscription?.adminPhone || '').replace(/^0/, '')}`}
                               target="_blank" rel="noreferrer"
                               className="btn btn-success btn-sm"
                               onClick={() => markContacted(s.id)}
@@ -3207,7 +3210,7 @@ export default function SuperAdmin() {
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <a
-                              href={`https://wa.me/233${s.subscription?.adminPhone?.replace(/^0/, '') || ''}`}
+                              href={`https://wa.me/233${(s.contactPhones?.[0]?.value || s.subscription?.adminPhone || '').replace(/^0/, '')}`}
                               target="_blank" rel="noreferrer"
                               className="btn btn-success btn-sm"
                               onClick={() => markContacted(s.id)}
