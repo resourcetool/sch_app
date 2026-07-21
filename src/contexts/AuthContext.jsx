@@ -17,7 +17,7 @@ import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, deleteUser,
   EmailAuthProvider, reauthenticateWithCredential,
-  updateEmail as fbUpdateEmail, updatePassword as fbUpdatePassword,
+  verifyBeforeUpdateEmail, updatePassword as fbUpdatePassword,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db }              from '../services/firebase';
@@ -78,6 +78,34 @@ export function AuthProvider({ children }) {
         }
       }
 
+      // Reconcile a completed email change. changeEmail() below uses
+      // verifyBeforeUpdateEmail() — the Auth email only actually changes
+      // once the user clicks the confirmation link in their NEW inbox,
+      // which happens outside the app entirely. The next time they're
+      // seen here, firebaseUser.email will already reflect the new,
+      // confirmed address — if that differs from what Firestore has on
+      // file, the change just completed, so sync it (and clear any
+      // pending-verification flag) right now.
+      if (profile && firebaseUser.email && profile.email !== firebaseUser.email && navigator.onLine) {
+        try {
+          const updated = { ...profile, email: firebaseUser.email, pendingEmail: null, pendingEmailAt: null };
+          await setDoc(doc(db, 'users', firebaseUser.uid), {
+            email: firebaseUser.email, pendingEmail: null, pendingEmailAt: null,
+          }, { merge: true });
+          await idbPut('users', updated);
+          if (profile.schoolId && profile.role === 'admin') {
+            try {
+              await setDoc(doc(db, 'subscriptions', profile.schoolId), { adminEmail: firebaseUser.email }, { merge: true });
+            } catch (err) {
+              console.warn('[Auth] Email confirmed, but could not sync display email:', err.message);
+            }
+          }
+          profile = updated;
+        } catch (err) {
+          console.warn('[Auth] Could not reconcile confirmed email change:', err.message);
+        }
+      }
+
       // Set user — SubscriptionContext will handle pending/rejected wall
       setUser(firebaseUser);
       setUserProfile(profile || null);
@@ -131,32 +159,47 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * Lets the CURRENTLY signed-in user change their own login email.
-   * Requires their current password (Firebase requires a "recent login"
-   * for sensitive account changes — this re-authenticates first so the
-   * change isn't rejected with auth/requires-recent-login).
+   * Lets the CURRENTLY signed-in user change their own login email — using
+   * the same pattern Google/Facebook/etc. use: a confirmation link is sent
+   * to the NEW address, and the login email doesn't actually change until
+   * that link is clicked. The current email keeps working for login the
+   * whole time. (The old approach called updateEmail() directly, which
+   * modern Firebase projects reject outright — the fix is
+   * verifyBeforeUpdateEmail(), which is what actually sends the email.)
    *
-   * Keeps the Firestore users/{uid} profile in sync, and — for admins —
-   * also updates the denormalized adminEmail shown across the app
-   * (school lists, super admin views, etc). If that second write fails
-   * for any reason, the login email itself has still been changed
-   * successfully; only the display copy would be stale, which is safe.
+   * Firestore is NOT updated here — it can't be, because the Auth email
+   * hasn't changed yet. It's updated automatically the next time this
+   * user is seen signed in (see the reconciliation check in the
+   * onAuthStateChanged listener above), once firebaseUser.email actually
+   * reflects the new, confirmed address.
    */
   async function changeEmail(currentPassword, newEmail) {
     if (!auth.currentUser) throw new Error('You must be signed in.');
     const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
     await reauthenticateWithCredential(auth.currentUser, cred);
-    await fbUpdateEmail(auth.currentUser, newEmail.trim());
+    await verifyBeforeUpdateEmail(auth.currentUser, newEmail.trim());
 
-    await setDoc(doc(db, 'users', auth.currentUser.uid), { email: newEmail.trim() }, { merge: true });
-    if (userProfile?.schoolId) {
-      try {
-        await setDoc(doc(db, 'subscriptions', userProfile.schoolId), { adminEmail: newEmail.trim() }, { merge: true });
-      } catch (err) {
-        console.warn('Login email changed, but could not sync display email:', err.message);
-      }
-    }
-    setUserProfile(p => p ? { ...p, email: newEmail.trim() } : p);
+    // Record that a change is pending, purely so the UI can show
+    // "we're waiting on you to click the link sent to X" — this has no
+    // effect on login itself.
+    await setDoc(doc(db, 'users', auth.currentUser.uid), {
+      pendingEmail: newEmail.trim(), pendingEmailAt: Date.now(),
+    }, { merge: true });
+    setUserProfile(p => p ? { ...p, pendingEmail: newEmail.trim(), pendingEmailAt: Date.now() } : p);
+  }
+
+  /**
+   * Cancels a pending email-change request (clears the "pending" flag).
+   * Does not — and cannot — invalidate a link that's already been sent;
+   * if the old link is later clicked, the email will still change. This
+   * only clears the UI state so a new attempt can be made cleanly.
+   */
+  async function cancelPendingEmail() {
+    if (!auth.currentUser) throw new Error('You must be signed in.');
+    await setDoc(doc(db, 'users', auth.currentUser.uid), {
+      pendingEmail: null, pendingEmailAt: null,
+    }, { merge: true });
+    setUserProfile(p => p ? { ...p, pendingEmail: null, pendingEmailAt: null } : p);
   }
 
   /**
@@ -243,7 +286,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, userProfile, loading, syncComplete,
-      login, logout, registerAdmin, changeEmail, changePassword,
+      login, logout, registerAdmin, changeEmail, changePassword, cancelPendingEmail,
     }}>
       {loading ? (
         <div style={{
