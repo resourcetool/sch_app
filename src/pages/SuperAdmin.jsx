@@ -39,6 +39,9 @@ import { collection, query, where, getDocs, updateDoc } from 'firebase/firestore
 import { sendPasswordResetEmail } from 'firebase/auth';
 import ContactListEditor from '../components/common/ContactListEditor';
 import {
+  getAllEmailChangeRequests, approveEmailChangeRequest, rejectEmailChangeRequest,
+} from '../services/emailChangeService';
+import {
   moveRecordToTrash, moveSchoolToTrash, getTrash,
   restoreFromTrash, purgeTrashItem, purgeExpiredTrash, TRASH_RETENTION_DAYS,
 } from '../services/trashService';
@@ -929,6 +932,147 @@ function TrashPanel() {
     </div>
   );
 }
+
+// ── EMAIL CHANGE REQUESTS PANEL ──────────────────────────────────
+// Every email change now needs super admin's approval before the user
+// can even trigger Firebase's own confirmation link — this is the review
+// queue for that. It's also the only place super admin can see the FULL
+// lifecycle of a change (requested → approved → link sent → completed),
+// since there's no way to directly inspect someone else's Firebase Auth
+// email without the Admin SDK.
+const REQUEST_STATUS_UI = {
+  pending:            { label: 'Pending Review',    color: '#f5a623', bg: '#fff8e1' },
+  approved:           { label: 'Approved',           color: '#2980b9', bg: '#e3f2fd' },
+  verification_sent:  { label: 'Link Sent',          color: '#2980b9', bg: '#e3f2fd' },
+  completed:          { label: '✓ Completed',        color: '#27AE60', bg: '#e8f8f0' },
+  rejected:           { label: '✕ Rejected',         color: '#e74c3c', bg: '#fce4ec' },
+};
+
+function EmailRequestsPanel({ schools }) {
+  const [requests, setRequests] = useState([]);
+  const [loading,   setLoading] = useState(true);
+  const [acting,    setActing]  = useState(null);
+  const [filter,    setFilter]  = useState('pending'); // pending | all
+
+  const schoolNameById = Object.fromEntries(schools.map(s => [s.id, s.name]));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setRequests(await getAllEmailChangeRequests()); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleApprove(req) {
+    if (!window.confirm(
+      `Approve ${req.currentEmail}'s request to change their email to "${req.newEmail}"?\n\n` +
+      `They'll then be able to trigger Firebase's confirmation link themselves — the actual ` +
+      `change only completes once they click that link.`
+    )) return;
+    setActing(req.id);
+    try {
+      await approveEmailChangeRequest(req.id, auth.currentUser?.email || 'super-admin');
+      await load();
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function handleReject(req) {
+    const reason = window.prompt(
+      `Reject ${req.currentEmail}'s request to change their email to "${req.newEmail}"?\n\n` +
+      `Optional reason (shown to them):`
+    );
+    if (reason === null) return; // cancelled
+    setActing(req.id);
+    try {
+      await rejectEmailChangeRequest(req.id, auth.currentUser?.email || 'super-admin', reason);
+      await load();
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  const visible = filter === 'pending' ? requests.filter(r => r.status === 'pending') : requests;
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', margin: 0 }}>
+          Admins/teachers now REQUEST an email change instead of doing it freely — approve or reject
+          here. Super admin can never directly see or set anyone's actual Firebase login email (no
+          Admin SDK in this project); what's tracked here is the full review + confirmation lifecycle,
+          which is the only way to have real visibility into where a change stands.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <button className={`btn btn-sm ${filter === 'pending' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter('pending')}>
+          Pending Only {requests.filter(r => r.status === 'pending').length > 0 && `(${requests.filter(r => r.status === 'pending').length})`}
+        </button>
+        <button className={`btn btn-sm ${filter === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter('all')}>
+          All History
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="card"><div className="spinner-center"><div className="spinner" /></div></div>
+      ) : visible.length === 0 ? (
+        <div className="card"><div className="empty-state"><div className="icon">📭</div><p>Nothing here.</p></div></div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {visible.map(req => {
+            const ui = REQUEST_STATUS_UI[req.status] || REQUEST_STATUS_UI.pending;
+            return (
+              <div key={req.id} className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                      {schoolNameById[req.schoolId] || 'Unknown school'}
+                    </div>
+                    <div style={{ fontSize: '.84rem', color: 'var(--text-mid)' }}>
+                      <span style={{ textDecoration: 'line-through', opacity: .7 }}>{req.currentEmail}</span>
+                      {' → '}
+                      <strong>{req.newEmail}</strong>
+                    </div>
+                    <div style={{ fontSize: '.76rem', color: 'var(--text-lt)', marginTop: 4 }}>
+                      Requested {new Date(req.requestedAt).toLocaleString()}
+                      {req.reviewedAt && ` · Reviewed ${new Date(req.reviewedAt).toLocaleString()} by ${req.reviewedBy}`}
+                      {req.verificationSentAt && ` · Link sent ${new Date(req.verificationSentAt).toLocaleString()}`}
+                      {req.completedAt && ` · Completed ${new Date(req.completedAt).toLocaleString()}`}
+                    </div>
+                    {req.status === 'rejected' && req.rejectionReason && (
+                      <div style={{ fontSize: '.78rem', color: 'var(--danger)', marginTop: 4 }}>
+                        Reason: {req.rejectionReason}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                    <span style={{ background: ui.bg, color: ui.color, fontWeight: 700, fontSize: '.74rem', padding: '4px 10px', borderRadius: 20 }}>
+                      {ui.label}
+                    </span>
+                    {req.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-success btn-sm" disabled={acting === req.id} onClick={() => handleApprove(req)}>✓ Approve</button>
+                        <button className="btn btn-danger btn-sm" disabled={acting === req.id} onClick={() => handleReject(req)}>✕ Reject</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmailComposerPanel({ schools, userProfile }) {
   const [mode,      setMode]      = useState('individual'); // 'individual' | 'bulk'
   const [toEmail,   setToEmail]   = useState('');
@@ -2848,6 +2992,9 @@ export default function SuperAdmin() {
             style={{ color: tab === 'trash' ? '#fff' : '', background: tab === 'trash' ? '#6a1b9a' : '' }}>
             ♻️ Trash
           </button>
+          <button className={`tab${tab === 'emailRequests' ? ' active' : ''}`} onClick={() => setTab('emailRequests')}>
+            📧 Email Requests
+          </button>
           <button className={`tab${tab === 'requests' ? ' active' : ''}`} onClick={() => setTab('requests')}>
             Requests {pendingRequests.length > 0 && (
               <span className="badge badge-danger" style={{ marginLeft: 6 }}>{pendingRequests.length}</span>
@@ -3248,6 +3395,11 @@ export default function SuperAdmin() {
         {/* ── TRASH ── */}
         {tab === 'trash' && (
           <TrashPanel />
+        )}
+
+        {/* ── EMAIL CHANGE REQUESTS ── */}
+        {tab === 'emailRequests' && (
+          <EmailRequestsPanel userProfile={userProfile} schools={schools} />
         )}
 
         {/* ── EMAIL COMPOSER ── */}
