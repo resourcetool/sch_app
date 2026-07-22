@@ -16,8 +16,9 @@ import React, { useState }              from 'react';
 import { Link }                         from 'react-router-dom';
 import { useAuth }                      from '../contexts/AuthContext';
 import { startFreeTrial }               from '../services/superAdminService';
-import { sendEmailVerification }        from 'firebase/auth';
-import { auth }                         from '../services/firebase';
+import { sendEmailVerification, deleteUser } from 'firebase/auth';
+import { doc, deleteDoc }               from 'firebase/firestore';
+import { auth, db }                     from '../services/firebase';
 import PasswordInput                    from '../components/PasswordInput';
 import {
   validateEmail, validateGhanaPhone, validateSchoolName, checkPasswordStrength,
@@ -77,11 +78,14 @@ export default function TrialSignup() {
     if (!validate()) return;
 
     setLoading(true); setGlobalError('');
+    let registeredUser = null;
     try {
       const phoneCheck = validateGhanaPhone(form.phone);
 
-      // Step A: Create Firebase Auth + school + user profile (atomic)
-      const { school } = await registerAdmin(form.email, form.password, {
+      // Step A: Create Firebase Auth + school + user profile (atomic —
+      // registerAdmin() already rolls itself back internally if either
+      // Firestore write fails).
+      const { school, user } = await registerAdmin(form.email, form.password, {
         firstName:   form.firstName.trim(),
         lastName:    form.lastName.trim(),
         schoolName:  form.schoolName.trim(),
@@ -92,6 +96,7 @@ export default function TrialSignup() {
         academicYear: form.academicYear,
         currentTerm:  form.currentTerm,
       });
+      registeredUser = user;
 
       // Step B: Send email verification while still signed in
       const currentUser = auth.currentUser;
@@ -113,10 +118,41 @@ export default function TrialSignup() {
       setStep(2); // show email verification screen (logged-out state)
 
     } catch (err) {
+      // ── FULL ROLLBACK ──────────────────────────────────────────
+      // If ANYTHING after the Auth account was created fails (email
+      // verification, or — most importantly — creating the pending trial
+      // subscription itself), we must not leave behind a fully working,
+      // logged-in account with no subscription tracking it at all. That
+      // exact gap used to let a signup that failed partway through remain
+      // silently usable and invisible to super admin monitoring.
+      //
+      // registerAdmin() already cleans up school/user docs if IT fails
+      // internally. This handles the case where registerAdmin() SUCCEEDED
+      // but a later step didn't: delete the user profile (allowed — an
+      // admin can delete their own profile) and delete the Auth account
+      // itself (a user can always delete their own current session),
+      // then force sign-out no matter what, so nothing is ever left
+      // logged in after an error here.
+      if (registeredUser && err.code !== 'auth/email-already-in-use') {
+        try {
+          await deleteDoc(doc(db, 'users', registeredUser.uid));
+        } catch (cleanupErr) {
+          console.warn('[TrialSignup] Could not clean up user profile after failed signup:', cleanupErr.message);
+        }
+        try {
+          if (auth.currentUser) await deleteUser(auth.currentUser);
+        } catch (cleanupErr) {
+          console.warn('[TrialSignup] Could not delete Auth account after failed signup:', cleanupErr.message);
+        }
+      }
+      try { await logout(); } catch { /* already signed out or never fully signed in */ }
+
       if (err.code === 'auth/email-already-in-use') {
         setErrors(e => ({ ...e, email: 'This email is already registered. Try signing in.' }));
       } else {
-        setGlobalError(err.message);
+        setGlobalError(
+          `${err.message}\n\nYour account was not created — please try again. If this keeps happening, contact support.`
+        );
       }
     } finally {
       setLoading(false);
@@ -198,12 +234,12 @@ export default function TrialSignup() {
           <div style={{ background: '#fff3e0', borderRadius: 12, padding: '14px 18px', marginBottom: 24, textAlign: 'left' }}>
             <div style={{ fontWeight: 700, color: '#e65100', marginBottom: 4, fontSize: '.85rem' }}>Why manual review?</div>
             <div style={{ fontSize: '.8rem', color: '#bf6000', lineHeight: 1.6 }}>
-              We verify each trial request to ensure SchoolMS is being used by real schools.
+              We verify each trial request to ensure SchoolPilot is being used by real schools.
               This protects the integrity of the platform for all subscribing schools.
             </div>
           </div>
           <a
-            href="https://wa.me/233549548274?text=Hello, I just submitted a trial request for SchoolMS for my school."
+            href="https://wa.me/233549548274?text=Hello, I just submitted a trial request for SchoolPilot for my school."
             target="_blank" rel="noreferrer"
             className="btn btn-primary btn-lg"
             style={{ display: 'block', textDecoration: 'none', marginBottom: 10 }}
@@ -226,7 +262,7 @@ export default function TrialSignup() {
           <span style={{ fontSize: '1.3rem' }}>🎁</span>
           <span style={{ fontSize: '.85rem', fontWeight: 700 }}>Free Trial</span>
         </div>
-        <h1>Try SchoolMS Free</h1>
+        <h1>Try SchoolPilot Free</h1>
         <p style={{ marginTop: 12, opacity: .9 }}>Set up your school and experience the full system — not a watered-down demo.</p>
 
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
