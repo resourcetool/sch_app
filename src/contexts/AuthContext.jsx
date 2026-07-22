@@ -23,6 +23,7 @@ import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db }              from '../services/firebase';
 import { initialSync, setupConnectivityListeners } from '../services/syncService';
 import { idbGet, idbPut }        from '../services/indexedDB';
+import { getMyActiveRequest, markVerificationSent, markRequestCompleted } from '../services/emailChangeService';
 import { logActivity }           from '../services/superAdminService';
 import { isSuperAdmin }          from '../services/superAdminService';
 
@@ -81,26 +82,62 @@ export function AuthProvider({ children }) {
       // Reconcile a completed email change. changeEmail() below uses
       // verifyBeforeUpdateEmail() — the Auth email only actually changes
       // once the user clicks the confirmation link in their NEW inbox,
-      // which happens outside the app entirely. The next time they're
-      // seen here, firebaseUser.email will already reflect the new,
-      // confirmed address — if that differs from what Firestore has on
-      // file, the change just completed, so sync it (and clear any
-      // pending-verification flag) right now.
-      if (profile && firebaseUser.email && profile.email !== firebaseUser.email && navigator.onLine) {
+      // which typically happens on a DIFFERENT device (their phone/email
+      // client), not this browser tab. onAuthStateChanged does NOT
+      // automatically re-fire just because the email changed server-side
+      // elsewhere — so without forcing a reload, this app instance could
+      // keep believing the OLD email is still current indefinitely (this
+      // was the exact cause of super admin still seeing a stale address).
+      // reload() forces a fresh fetch from Firebase's servers before we
+      // compare anything.
+      if (navigator.onLine) {
+        try { await firebaseUser.reload(); } catch (err) { console.warn('[Auth] reload() failed:', err.message); }
+      }
+      const confirmedEmail = firebaseUser.email;
+
+      if (profile && confirmedEmail && profile.email !== confirmedEmail && navigator.onLine) {
+        const oldEmail = profile.email;
         try {
-          const updated = { ...profile, email: firebaseUser.email, pendingEmail: null, pendingEmailAt: null };
-          await setDoc(doc(db, 'users', firebaseUser.uid), {
-            email: firebaseUser.email, pendingEmail: null, pendingEmailAt: null,
-          }, { merge: true });
+          const updated = { ...profile, email: confirmedEmail };
+          await setDoc(doc(db, 'users', firebaseUser.uid), { email: confirmedEmail }, { merge: true });
           await idbPut('users', updated);
-          if (profile.schoolId && profile.role === 'admin') {
+          profile = updated;
+
+          // Propagate to every other place this address is displayed —
+          // this is the "update all occurrences" part. Each is wrapped
+          // individually so one failing doesn't block the others.
+          if (profile.role === 'admin' && profile.schoolId) {
             try {
-              await setDoc(doc(db, 'subscriptions', profile.schoolId), { adminEmail: firebaseUser.email }, { merge: true });
+              await setDoc(doc(db, 'subscriptions', profile.schoolId), { adminEmail: confirmedEmail }, { merge: true });
             } catch (err) {
-              console.warn('[Auth] Email confirmed, but could not sync display email:', err.message);
+              console.warn('[Auth] Could not sync subscriptions.adminEmail:', err.message);
+            }
+            try {
+              const schoolSnap = await getDoc(doc(db, 'schools', profile.schoolId));
+              if (schoolSnap.exists()) {
+                const schoolData = schoolSnap.data();
+                const contactEmails = schoolData.contactEmails || [];
+                if (contactEmails[0]?.value?.toLowerCase() === oldEmail?.toLowerCase()) {
+                  const nextContacts = [{ ...contactEmails[0], value: confirmedEmail }, ...contactEmails.slice(1)];
+                  await setDoc(doc(db, 'schools', profile.schoolId), { contactEmails: nextContacts }, { merge: true });
+                }
+              }
+            } catch (err) {
+              console.warn('[Auth] Could not sync schools.contactEmails:', err.message);
             }
           }
-          profile = updated;
+
+          // Mark whichever request tracked this change as completed, so
+          // super admin's Email Requests view reflects reality instead of
+          // sitting on "verification sent" forever.
+          try {
+            const activeRequest = await getMyActiveRequest(firebaseUser.uid);
+            if (activeRequest && activeRequest.status === 'verification_sent') {
+              await markRequestCompleted(activeRequest.id);
+            }
+          } catch (err) {
+            console.warn('[Auth] Could not mark email change request completed:', err.message);
+          }
         } catch (err) {
           console.warn('[Auth] Could not reconcile confirmed email change:', err.message);
         }
@@ -173,33 +210,28 @@ export function AuthProvider({ children }) {
    * onAuthStateChanged listener above), once firebaseUser.email actually
    * reflects the new, confirmed address.
    */
-  async function changeEmail(currentPassword, newEmail) {
+  /**
+   * The second half of the request → approval → change flow. This is only
+   * ever called after super admin has approved the matching request in
+   * emailChangeRequests (Settings.jsx checks this before even showing the
+   * button) — it's also re-checked here, not just in the UI, so this
+   * can't be triggered by directly calling the function either.
+   *
+   * Sends Firebase's own confirmation link to the new address (the "big
+   * platform" pattern: current email keeps working until that link is
+   * clicked) and records that the link was sent, so super admin's Email
+   * Requests view shows real progress instead of "approved" forever.
+   */
+  async function changeEmail(currentPassword, newEmail, requestId) {
     if (!auth.currentUser) throw new Error('You must be signed in.');
+    const request = await getMyActiveRequest(auth.currentUser.uid);
+    if (!request || request.id !== requestId || !['approved', 'verification_sent'].includes(request.status)) {
+      throw new Error('This email change has not been approved yet. Please wait for super admin to review your request.');
+    }
     const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
     await reauthenticateWithCredential(auth.currentUser, cred);
     await verifyBeforeUpdateEmail(auth.currentUser, newEmail.trim());
-
-    // Record that a change is pending, purely so the UI can show
-    // "we're waiting on you to click the link sent to X" — this has no
-    // effect on login itself.
-    await setDoc(doc(db, 'users', auth.currentUser.uid), {
-      pendingEmail: newEmail.trim(), pendingEmailAt: Date.now(),
-    }, { merge: true });
-    setUserProfile(p => p ? { ...p, pendingEmail: newEmail.trim(), pendingEmailAt: Date.now() } : p);
-  }
-
-  /**
-   * Cancels a pending email-change request (clears the "pending" flag).
-   * Does not — and cannot — invalidate a link that's already been sent;
-   * if the old link is later clicked, the email will still change. This
-   * only clears the UI state so a new attempt can be made cleanly.
-   */
-  async function cancelPendingEmail() {
-    if (!auth.currentUser) throw new Error('You must be signed in.');
-    await setDoc(doc(db, 'users', auth.currentUser.uid), {
-      pendingEmail: null, pendingEmailAt: null,
-    }, { merge: true });
-    setUserProfile(p => p ? { ...p, pendingEmail: null, pendingEmailAt: null } : p);
+    await markVerificationSent(requestId);
   }
 
   /**
@@ -286,7 +318,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, userProfile, loading, syncComplete,
-      login, logout, registerAdmin, changeEmail, changePassword, cancelPendingEmail,
+      login, logout, registerAdmin, changeEmail, changePassword,
     }}>
       {loading ? (
         <div style={{
