@@ -146,7 +146,7 @@ export const PLAN_FEATURE_LIST = {
     'Up to 200 students',
     'Unlimited classes & subjects',
     'Score entry for teachers',
-    'PDF report cards (SchoolMS watermark shown)',
+    'PDF report cards (SchoolPilot watermark shown)',
     'Promotion engine (end-of-year promotion wizard)',
     'Works fully offline',
     '✗ No performance analytics/charts',
@@ -297,7 +297,16 @@ export function canUseFeature(subscription, feature) {
 
 export function isReadOnly(subscription) {
   const status = getSubscriptionStatus(subscription);
-  return ['grace','expired','suspended','trial_ended','pending_approval','rejected','deletion_requested'].includes(status);
+  // 'none' — no subscription document exists at all — used to fall
+  // through here uncaught, which meant a missing subscription was treated
+  // as FULL, UNRESTRICTED ACCESS rather than blocked. This happens
+  // whenever account creation is interrupted partway (e.g. registerAdmin()
+  // succeeds but the follow-up startFreeTrial() call fails or the network
+  // drops) — the Firebase Auth account and school/profile already exist
+  // and work, there's just no plan tracking it at all, making it
+  // completely invisible to super admin. Treating 'none' as read-only
+  // closes that gap regardless of which step of signup failed.
+  return ['grace', 'expired', 'suspended', 'trial_ended', 'pending_approval', 'rejected', 'deletion_requested', 'none'].includes(status);
 }
 
 export function getStudentLimit(subscription) {
