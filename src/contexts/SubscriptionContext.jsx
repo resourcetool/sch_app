@@ -69,7 +69,7 @@ function PendingApprovalScreen({ subscription, onRefresh, logout }) {
             {checking ? '⏳ Checking…' : '↻ Check Approval Status'}
           </button>
           <a
-            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I submitted a SchoolMS trial request for ${subscription?.schoolName || 'my school'} and am waiting for approval.`}
+            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I submitted a SchoolPilot trial request for ${subscription?.schoolName || 'my school'} and am waiting for approval.`}
             target="_blank" rel="noreferrer"
             style={{
               display: 'block', background: '#25D366', color: '#fff',
@@ -112,7 +112,7 @@ function DeletionRequestedScreen({ subscription, logout }) {
             All your data is still safely preserved during this period.
           </div>
         </div>
-        <a href={`https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolMS data deletion request.`}
+        <a href={`https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolPilot data deletion request.`}
           target="_blank" rel="noreferrer"
           style={{ display: 'block', background: '#25D366', color: '#fff', padding: '12px 20px', borderRadius: 10, fontWeight: 700, textDecoration: 'none', fontSize: '.9rem', marginBottom: 10 }}>
           📱 Cancel Deletion — WhatsApp 0549548274
@@ -126,6 +126,57 @@ function DeletionRequestedScreen({ subscription, logout }) {
 }
 
 // ── REJECTED SCREEN ───────────────────────────────────────────────
+// Shown when there is NO subscription document at all for this school —
+// this happens if account creation got interrupted partway (e.g. the
+// Auth account + school + profile were created successfully, but the
+// follow-up step that creates the trial/subscription record failed or
+// never ran). The account works and can log in, but was never actually
+// approved for anything — this screen makes that state visible and
+// blocking instead of silently granting full access, which is what used
+// to happen here.
+function NoSubscriptionScreen({ logout }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #0f3460 0%, #1a4a7a 100%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 20, padding: '48px 40px',
+        maxWidth: 480, width: '100%', textAlign: 'center',
+        boxShadow: '0 20px 60px rgba(0,0,0,.3)',
+      }}>
+        <div style={{ fontSize: '3rem', marginBottom: 16 }}>⚠️</div>
+        <h2 style={{ color: '#0f3460', marginBottom: 10 }}>No Active Plan</h2>
+        <p style={{ color: '#666', marginBottom: 20, lineHeight: 1.7, fontSize: '.88rem' }}>
+          Your account exists, but doesn't have a plan attached to it yet — this can happen if your
+          signup was interrupted partway through. You'll need super admin to review and set up your
+          school's plan before you can continue.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <a
+            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my SchoolPilot account has no plan attached — please help me set it up.`}
+            target="_blank" rel="noreferrer"
+            style={{
+              display: 'block', background: '#25D366', color: '#fff',
+              padding: '12px 20px', borderRadius: 10, fontWeight: 700,
+              textDecoration: 'none', fontSize: '.9rem',
+            }}
+          >
+            📱 Contact Us — 0549548274
+          </a>
+        </div>
+        <button
+          onClick={logout}
+          style={{ marginTop: 16, background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: '.78rem', textDecoration: 'underline' }}
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RejectedScreen({ subscription, logout }) {
   return (
     <div style={{
@@ -151,7 +202,7 @@ function RejectedScreen({ subscription, logout }) {
           official details and we'll review it again.
         </p>
         <a
-          href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my SchoolMS trial request was rejected. I'd like to appeal.`}
+          href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my SchoolPilot trial request was rejected. I'd like to appeal.`}
           target="_blank" rel="noreferrer"
           style={{
             display: 'block', background: '#25D366', color: '#fff',
@@ -248,6 +299,9 @@ export function SubscriptionProvider({ children }) {
   if (status === 'deletion_requested') {
     return <DeletionRequestedScreen subscription={subscription} logout={logout} />;
   }
+  if (status === 'none') {
+    return <NoSubscriptionScreen logout={logout} />;
+  }
 
   return (
     <SubscriptionContext.Provider value={{
@@ -262,12 +316,19 @@ export function SubscriptionProvider({ children }) {
 
 export function useSubscription() {
   const ctx = useContext(SubscriptionContext);
+  // This fallback only fires if useSubscription() is somehow called
+  // outside <SubscriptionProvider> — it used to default to full,
+  // unrestricted access (status: 'active', readOnly: false, can: () =>
+  // true), which is exactly backwards for a safety fallback. Defaulting
+  // to blocked/read-only here means a wiring mistake fails closed
+  // (visibly broken, safe) rather than failing open (invisibly granting
+  // access to everything).
   if (!ctx) return {
     subscription: null, loading: false,
-    status: 'active', days: 30,
-    plan: PLANS.trial, readOnly: false,
-    watermark: false, studentLimit: 9999,
-    can: () => true, refresh: () => {},
+    status: 'none', days: 0,
+    plan: PLANS.trial, readOnly: true,
+    watermark: true, studentLimit: 0,
+    can: () => false, refresh: () => {},
   };
   return ctx;
 }
