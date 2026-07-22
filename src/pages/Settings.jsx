@@ -10,13 +10,16 @@
 // - School Type field added to School Info (used as subtitle in report header).
 // - All existing tabs (Academic Year, Grading Scale, Promotion Rules) preserved.
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import ContactListEditor from '../components/common/ContactListEditor';
 import { useSchool } from '../contexts/SchoolContext';
 import { useAuth }  from '../contexts/AuthContext';
 import { defaultGradingScale }         from '../services/scoreService';
 import { requestAccountDeletion }      from '../services/superAdminService';
+import {
+  getMyActiveRequest, requestEmailChange, cancelMyRequest,
+} from '../services/emailChangeService';
 import { useSubscription }             from '../contexts/SubscriptionContext';
 import {
   PLANS, BILLING_CYCLES, getPlanPrice, getTermlySaving,
@@ -333,8 +336,9 @@ function SubscriptionTab({ subscription }) {
 // Firebase requires a "recent login" for both of these sensitive
 // changes, so both forms ask for the CURRENT password first.
 function LoginSecurityPanel() {
-  const { user, userProfile, changeEmail, changePassword, cancelPendingEmail } = useAuth();
+  const { user, userProfile, changeEmail, changePassword } = useAuth();
 
+  const [request,   setRequest]   = useState(undefined); // undefined = loading, null = none
   const [newEmail,  setNewEmail]  = useState('');
   const [emailPwd,  setEmailPwd]  = useState('');
   const [emailSaving, setEmailSaving] = useState(false);
@@ -346,6 +350,13 @@ function LoginSecurityPanel() {
   const [confirmPwd,setConfirmPwd]= useState('');
   const [pwdSaving, setPwdSaving] = useState(false);
   const [pwdMsg,    setPwdMsg]    = useState({ type: '', text: '' });
+
+  const loadRequest = useCallback(() => {
+    if (!user?.uid) return;
+    getMyActiveRequest(user.uid).then(setRequest).catch(() => setRequest(null));
+  }, [user?.uid]);
+
+  useEffect(() => { loadRequest(); }, [loadRequest]);
 
   function friendlyAuthError(err) {
     if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
@@ -362,34 +373,55 @@ function LoginSecurityPanel() {
     return `${err.message}${err.code ? ` (${err.code})` : ''}`;
   }
 
-  async function handleCancelPending() {
-    setCancelling(true);
-    try {
-      await cancelPendingEmail();
-    } catch (err) {
-      setEmailMsg({ type: 'danger', text: friendlyAuthError(err) });
-    } finally {
-      setCancelling(false);
-    }
-  }
-
-  async function handleChangeEmail(e) {
+  async function handleRequestEmailChange(e) {
     e.preventDefault();
     setEmailMsg({ type: '', text: '' });
-    if (!newEmail.trim() || !emailPwd) return;
+    if (!newEmail.trim()) return;
     if (newEmail.trim().toLowerCase() === user?.email?.toLowerCase()) {
       setEmailMsg({ type: 'danger', text: 'That\'s already your current email.' });
       return;
     }
     setEmailSaving(true);
     try {
-      await changeEmail(emailPwd, newEmail.trim());
+      await requestEmailChange(user.uid, userProfile?.schoolId, user.email, newEmail.trim());
+      setEmailMsg({ type: 'success', text: '✓ Request submitted — waiting for super admin to review it.' });
+      setNewEmail('');
+      loadRequest();
+    } catch (err) {
+      setEmailMsg({ type: 'danger', text: err.message });
+    } finally {
+      setEmailSaving(false);
+    }
+  }
+
+  async function handleCancelRequest() {
+    if (!request) return;
+    setCancelling(true);
+    try {
+      await cancelMyRequest(request.id);
+      setRequest(null);
+      setEmailMsg({ type: '', text: '' });
+    } catch (err) {
+      setEmailMsg({ type: 'danger', text: err.message });
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  async function handleSendVerification(e) {
+    e.preventDefault();
+    setEmailMsg({ type: '', text: '' });
+    if (!emailPwd) return;
+    setEmailSaving(true);
+    try {
+      await changeEmail(emailPwd, request.newEmail, request.id);
       setEmailMsg({
         type: 'success',
-        text: `✓ We've sent a confirmation link to ${newEmail.trim()}. Open it there to finish the change — ` +
+        text: `✓ Confirmation link sent to ${request.newEmail}. Open it there to finish — ` +
               `keep logging in with your current email (${user?.email}) until you do. Check spam if it doesn't arrive in a few minutes.`,
       });
-      setNewEmail(''); setEmailPwd('');
+      setEmailPwd('');
+      loadRequest();
     } catch (err) {
       setEmailMsg({ type: 'danger', text: friendlyAuthError(err) });
     } finally {
@@ -420,36 +452,76 @@ function LoginSecurityPanel() {
       <div className="card">
         <div className="card-header"><span className="card-title">Change Login Email</span></div>
         <p style={{ fontSize: '.82rem', color: 'var(--text-mid)', marginBottom: 14 }}>
-          Current login email: <strong>{user?.email}</strong>. Made a typo when you signed up, or just
-          need to switch to a different address? Change it here — no need to contact support.
+          Current login email: <strong>{user?.email}</strong>. Email changes now go through super admin
+          review — request a change below, and once it's approved you'll be able to send yourself a
+          confirmation link.
         </p>
-        {userProfile?.pendingEmail && (
-          <div className="alert alert-warning" style={{ marginBottom: 14 }}>
-            ⏳ A confirmation link was sent to <strong>{userProfile.pendingEmail}</strong>
-            {userProfile.pendingEmailAt ? ` on ${new Date(userProfile.pendingEmailAt).toLocaleString()}` : ''}.
-            Click it there to complete the change. Didn't get it? Check spam, or{' '}
-            <button
-              type="button" onClick={handleCancelPending} disabled={cancelling}
-              style={{ background: 'none', border: 'none', color: 'var(--navy)', fontWeight: 700, cursor: 'pointer', padding: 0 }}
-            >
-              cancel and try again
-            </button>.
-          </div>
-        )}
         {emailMsg.text && <div className={`alert alert-${emailMsg.type}`} style={{ marginBottom: 12 }}>{emailMsg.text}</div>}
-        <form onSubmit={handleChangeEmail} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="form-group">
-            <label>New Email *</label>
-            <input type="email" required value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="new.email@example.com" />
+
+        {request === undefined ? (
+          <p style={{ fontSize: '.82rem', color: 'var(--text-lt)' }}>Loading…</p>
+
+        ) : !request ? (
+          /* No request in flight — show the request form */
+          <form onSubmit={handleRequestEmailChange} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="form-group">
+              <label>New Email *</label>
+              <input type="email" required value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="new.email@example.com" />
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={emailSaving} style={{ alignSelf: 'flex-start' }}>
+              {emailSaving ? 'Submitting…' : 'Request Email Change'}
+            </button>
+          </form>
+
+        ) : request.status === 'pending' ? (
+          <div className="alert alert-warning">
+            ⏳ Your request to change your email to <strong>{request.newEmail}</strong> is waiting for
+            super admin to review it. You'll be able to continue here once it's approved.
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button" onClick={handleCancelRequest} disabled={cancelling}
+                className="btn btn-ghost btn-sm"
+              >
+                {cancelling ? '…' : 'Cancel Request'}
+              </button>
+            </div>
           </div>
-          <div className="form-group">
-            <label>Current Password *</label>
-            <input type="password" required value={emailPwd} onChange={e => setEmailPwd(e.target.value)} placeholder="Confirm it's you" />
+
+        ) : request.status === 'rejected' ? (
+          <div className="alert alert-danger">
+            ✕ Your request to change your email to <strong>{request.newEmail}</strong> was declined
+            {request.rejectionReason ? `: "${request.rejectionReason}"` : '.'}
+            <div style={{ marginTop: 8 }}>
+              <button type="button" onClick={handleCancelRequest} className="btn btn-ghost btn-sm">
+                Dismiss &amp; Try Again
+              </button>
+            </div>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={emailSaving} style={{ alignSelf: 'flex-start' }}>
-            {emailSaving ? 'Sending link…' : userProfile?.pendingEmail ? 'Send a New Link' : 'Send Confirmation Link'}
-          </button>
-        </form>
+
+        ) : (
+          /* approved or verification_sent — let them (re)send the link */
+          <>
+            <div className="alert alert-success" style={{ marginBottom: 14 }}>
+              ✓ Approved! Enter your password below to send a confirmation link to{' '}
+              <strong>{request.newEmail}</strong>.
+              {request.status === 'verification_sent' && request.verificationSentAt && (
+                <div style={{ fontSize: '.78rem', marginTop: 4 }}>
+                  Last sent {new Date(request.verificationSentAt).toLocaleString()} — didn't arrive? Check
+                  spam, or send again below.
+                </div>
+              )}
+            </div>
+            <form onSubmit={handleSendVerification} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="form-group">
+                <label>Current Password *</label>
+                <input type="password" required value={emailPwd} onChange={e => setEmailPwd(e.target.value)} placeholder="Confirm it's you" />
+              </div>
+              <button type="submit" className="btn btn-primary" disabled={emailSaving} style={{ alignSelf: 'flex-start' }}>
+                {emailSaving ? 'Sending…' : request.status === 'verification_sent' ? 'Send Again' : 'Send Confirmation Link'}
+              </button>
+            </form>
+          </>
+        )}
       </div>
 
       <div className="card">
