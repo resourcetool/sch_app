@@ -11,6 +11,9 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth }           from '../contexts/AuthContext';
 import { validateCode, markCodeUsed, activateSchool } from '../services/superAdminService';
+import { deleteUser } from 'firebase/auth';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
 
 export default function Register() {
   const { registerAdmin } = useAuth();
@@ -67,8 +70,9 @@ export default function Register() {
     }
     setLoading(true);
     setError('');
+    let registeredUser = null;
     try {
-      const { school } = await registerAdmin(form.email, form.password, {
+      const { school, user } = await registerAdmin(form.email, form.password, {
         firstName:  form.firstName,
         lastName:   form.lastName,
         schoolName: form.schoolName,
@@ -79,6 +83,7 @@ export default function Register() {
         academicYear: form.academicYear,
         currentTerm:  form.currentTerm,
       });
+      registeredUser = user;
       await markCodeUsed(codeData.id, school.id, form.schoolName);
       await activateSchool(
         school.id, form.schoolName, codeData.plan,
@@ -87,6 +92,17 @@ export default function Register() {
       );
       navigate('/');
     } catch (err) {
+      // Same reasoning as TrialSignup.jsx: if markCodeUsed/activateSchool
+      // fails after registerAdmin() already succeeded, don't leave behind
+      // a fully working, logged-in account with no subscription tracking
+      // it — clean up what we can (own profile + own Auth account) rather
+      // than leaving a ghost account tied up on this email.
+      if (registeredUser && err.code !== 'auth/email-already-in-use') {
+        try { await deleteDoc(doc(db, 'users', registeredUser.uid)); }
+        catch (cleanupErr) { console.warn('[Register] Could not clean up user profile:', cleanupErr.message); }
+        try { if (auth.currentUser) await deleteUser(auth.currentUser); }
+        catch (cleanupErr) { console.warn('[Register] Could not delete Auth account:', cleanupErr.message); }
+      }
       setError(err.message);
     } finally {
       setLoading(false);
