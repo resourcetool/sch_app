@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { v4 as uuidv4 } from 'uuid';
+import { sendSuperAdminEmail, getSuperAdminEmails } from './superAdminService';
 
 // Avoids using a Firestore 'in' query alongside an '==' query, which needs
 // a composite index — fetch by the single indexed field (userId) and
@@ -59,6 +60,24 @@ export async function requestEmailChange(userId, schoolId, currentEmail, newEmai
     status: 'pending',
     requestedAt: Date.now(),
   });
+
+  // Notify super admin — this used to have no notification at all, so a
+  // request would sit invisible until someone happened to check the
+  // Email Requests tab.
+  for (const toEmail of getSuperAdminEmails()) {
+    try {
+      await sendSuperAdminEmail(
+        toEmail,
+        `📧 Email Change Request — ${currentEmail}`,
+        `A user has requested to change their SchoolPilot login email:\n\n` +
+        `From: ${currentEmail}\nTo: ${newEmail.trim()}\n\n` +
+        `Review it in the SuperAdmin panel → Email Requests tab.`
+      );
+    } catch (err) {
+      console.warn('[requestEmailChange] Notification failed silently:', err.message);
+    }
+  }
+
   return id;
 }
 
@@ -103,6 +122,23 @@ export async function approveEmailChangeRequest(requestId, reviewerEmail) {
     reviewedAt: Date.now(),
     reviewedBy: reviewerEmail,
   });
+
+  try {
+    const snap = await getDoc(doc(db, 'emailChangeRequests', requestId));
+    const req = snap.data();
+    if (req?.currentEmail) {
+      await sendSuperAdminEmail(
+        req.currentEmail,
+        `✓ Your Email Change Was Approved`,
+        `Your request to change your SchoolPilot login email to "${req.newEmail}" has been approved.\n\n` +
+        `Log back in to SchoolPilot and go to Settings → Login & Security to send yourself a ` +
+        `confirmation link and finish the change.`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[approveEmailChangeRequest] Notification failed silently:', err.message);
+  }
 }
 
 export async function rejectEmailChangeRequest(requestId, reviewerEmail, reason) {
@@ -112,4 +148,21 @@ export async function rejectEmailChangeRequest(requestId, reviewerEmail, reason)
     reviewedBy: reviewerEmail,
     rejectionReason: reason || '',
   });
+
+  try {
+    const snap = await getDoc(doc(db, 'emailChangeRequests', requestId));
+    const req = snap.data();
+    if (req?.currentEmail) {
+      await sendSuperAdminEmail(
+        req.currentEmail,
+        `Your Email Change Request`,
+        `Your request to change your SchoolPilot login email to "${req.newEmail}" was not approved.\n\n` +
+        `${reason ? `Reason: ${reason}\n\n` : ''}` +
+        `If you have questions, please reply to this email or reach us on WhatsApp at 0549548274.`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[rejectEmailChangeRequest] Notification failed silently:', err.message);
+  }
 }
