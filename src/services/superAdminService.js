@@ -344,6 +344,26 @@ export async function approveTrialRequest(trialId, approvedByEmail) {
     approvedBy:  approvedByEmail,
     approvedAt:  now,
   });
+
+  // Notify the school — previously they had NO way to know their trial
+  // was approved except manually reopening the app and having the 30s
+  // poll catch it, or logging in again to see the pending screen replaced.
+  try {
+    const subSnap = await getDoc(doc(db, 'subscriptions', trialId));
+    const sub = subSnap.data();
+    if (sub?.adminEmail) {
+      await sendSuperAdminEmail(
+        sub.adminEmail,
+        `🎉 Your SchoolPilot Trial Is Approved!`,
+        `Good news — your free trial for "${sub.schoolName}" has been approved!\n\n` +
+        `Your trial runs for ${plan_data.durationDays} days, until ${new Date(expiresAt).toLocaleDateString('en-GH', { dateStyle: 'long' })}.\n\n` +
+        `Log in now with the email and password you used to sign up to get started.`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[approveTrialRequest] Notification failed silently:', err.message);
+  }
 }
 
 export async function rejectTrialRequest(trialId, reason, rejectedByEmail) {
@@ -353,6 +373,24 @@ export async function rejectTrialRequest(trialId, reason, rejectedByEmail) {
     rejectedAt:      Date.now(),
     rejectionReason: reason || 'Did not meet trial requirements',
   });
+
+  try {
+    const subSnap = await getDoc(doc(db, 'subscriptions', trialId));
+    const sub = subSnap.data();
+    if (sub?.adminEmail) {
+      await sendSuperAdminEmail(
+        sub.adminEmail,
+        `Your SchoolPilot Trial Request`,
+        `We've reviewed your trial request for "${sub.schoolName}" and were unable to approve it ` +
+        `at this time.\n\nReason: ${reason || 'Did not meet trial requirements'}\n\n` +
+        `If you believe this is a mistake or have questions, please reply to this email or reach us ` +
+        `on WhatsApp at 0549548274.`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[rejectTrialRequest] Notification failed silently:', err.message);
+  }
 }
 
 export async function getPendingTrials() {
@@ -416,6 +454,22 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
   };
 
   await updateDoc(doc(db, 'subscriptions', schoolId), updated);
+
+  try {
+    const schoolName = existing.schoolName || (await getDoc(doc(db, 'schools', schoolId))).data()?.name || schoolId;
+    if (existing.adminEmail) {
+      await sendSuperAdminEmail(
+        existing.adminEmail,
+        `✓ Your SchoolPilot Subscription Was Renewed`,
+        `Your ${planId} plan for "${schoolName}" has been renewed, paid ${cycle === 'termly' ? 'per term' : 'monthly'}.\n\n` +
+        `Your access now runs until ${new Date(expiresAt).toLocaleDateString('en-GH', { dateStyle: 'long' })}. Thank you!`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[renewSubscription] Notification failed silently:', err.message);
+  }
+
   return { ...existing, ...updated };
 }
 
@@ -425,6 +479,27 @@ export async function suspendSchool(schoolId, reason) {
     suspendedAt: Date.now(),
     suspendReason: reason,
   });
+
+  try {
+    const [subSnap, schoolSnap] = await Promise.all([
+      getDoc(doc(db, 'subscriptions', schoolId)),
+      getDoc(doc(db, 'schools', schoolId)),
+    ]);
+    const adminEmail  = subSnap.data()?.adminEmail;
+    const schoolName  = schoolSnap.data()?.name || schoolId;
+    if (adminEmail) {
+      await sendSuperAdminEmail(
+        adminEmail,
+        `⚠ Your SchoolPilot Account Has Been Suspended`,
+        `Your SchoolPilot account for "${schoolName}" has been suspended.\n\n` +
+        `${reason ? `Reason: ${reason}\n\n` : ''}` +
+        `If you believe this is a mistake, please reply to this email or reach us on WhatsApp at 0549548274.`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[suspendSchool] Notification failed silently:', err.message);
+  }
 }
 
 export async function unsuspendSchool(schoolId) {
@@ -433,6 +508,25 @@ export async function unsuspendSchool(schoolId) {
     suspendedAt:   null,
     suspendReason: null,
   });
+
+  try {
+    const [subSnap, schoolSnap] = await Promise.all([
+      getDoc(doc(db, 'subscriptions', schoolId)),
+      getDoc(doc(db, 'schools', schoolId)),
+    ]);
+    const adminEmail  = subSnap.data()?.adminEmail;
+    const schoolName  = schoolSnap.data()?.name || schoolId;
+    if (adminEmail) {
+      await sendSuperAdminEmail(
+        adminEmail,
+        `✓ Your SchoolPilot Account Is Active Again`,
+        `Good news — your SchoolPilot account for "${schoolName}" has been reactivated. You can log back in now.`,
+        'SchoolPilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[unsuspendSchool] Notification failed silently:', err.message);
+  }
 }
 
 export async function toggleBackupAddon(schoolId, enabled) {
@@ -782,6 +876,27 @@ export async function requestAccountDeletion(schoolId, adminEmail, reason) {
   await logActivity(schoolId, '', adminEmail, 'deletion_requested', {
     reason, deleteAfter,
   });
+
+  // Notify super admin — this used to have NO notification at all, so a
+  // deletion request would sit invisible until someone happened to check
+  // the Deletions tab. Failure-safe: never blocks the actual request.
+  const schoolName = (await getDoc(doc(db, 'schools', schoolId))).data()?.name || schoolId;
+  const deleteAfterStr = new Date(deleteAfter).toLocaleDateString('en-GH', { dateStyle: 'long' });
+  for (const toEmail of getSuperAdminEmails()) {
+    try {
+      await sendSuperAdminEmail(
+        toEmail,
+        `🗑 Account Deletion Requested — ${schoolName}`,
+        `${adminEmail} has requested to delete their SchoolPilot account for "${schoolName}".\n\n` +
+        `Reason: ${reason || 'No reason given'}\n\n` +
+        `Their account is now locked (read-only). Data will be permanently deleted after ` +
+        `${deleteAfterStr} unless the request is cancelled before then.\n\n` +
+        `Review it in the SuperAdmin panel → Deletions tab.`
+      );
+    } catch (err) {
+      console.warn('[requestAccountDeletion] Notification failed silently:', err.message);
+    }
+  }
 }
 
 export async function cancelDeletionRequest(schoolId, adminEmail) {
@@ -795,6 +910,20 @@ export async function cancelDeletionRequest(schoolId, adminEmail) {
     status: 'active', inactiveAt: null,
   });
   await logActivity(schoolId, '', adminEmail, 'deletion_cancelled', {});
+
+  const schoolName = (await getDoc(doc(db, 'schools', schoolId))).data()?.name || schoolId;
+  for (const toEmail of getSuperAdminEmails()) {
+    try {
+      await sendSuperAdminEmail(
+        toEmail,
+        `✓ Deletion Request Cancelled — ${schoolName}`,
+        `${adminEmail} has cancelled their pending account deletion for "${schoolName}". ` +
+        `Their account is active again — no further action needed.`
+      );
+    } catch (err) {
+      console.warn('[cancelDeletionRequest] Notification failed silently:', err.message);
+    }
+  }
 }
 
 export async function getPendingDeletions() {
