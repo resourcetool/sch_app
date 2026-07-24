@@ -223,6 +223,8 @@ export default function Teachers() {
   const [editing,    setEditing]    = useState(null);
   const [showModal,  setShowModal]  = useState(false);
   const [error,      setError]      = useState('');
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkBusy,    setBulkBusy]    = useState(false);
 
   // Quick-add
   const [qFirst,    setQFirst]    = useState('');
@@ -337,6 +339,18 @@ export default function Teachers() {
   // admin requirements.) Note: the underlying Firebase Auth credential
   // itself can't be deleted from client code (no Admin SDK here) — but
   // without a users profile the account can no longer sign in to the app.
+  async function deleteOneTeacher(teacher) {
+    await deleteRecord('teachers', teacher.id);
+    const q    = query(collection(db, 'users'), where('teacherId', '==', teacher.id));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      await deleteRecord('users', snap.docs[0].id);
+    }
+    logActivity(schoolId, userProfile?.id || '', userProfile?.email || '', 'teacher_removed', {
+      teacherName: `${teacher.firstName} ${teacher.lastName}`,
+    });
+  }
+
   async function handleRemoveTeacher(teacher) {
     if (!window.confirm(
       `Permanently delete ${teacher.firstName} ${teacher.lastName}?\n\n` +
@@ -345,22 +359,48 @@ export default function Teachers() {
     )) return;
     setError('');
     try {
-      await deleteRecord('teachers', teacher.id);
-
-      const q    = query(collection(db, 'users'), where('teacherId', '==', teacher.id));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        await deleteRecord('users', snap.docs[0].id);
-      }
-
-      logActivity(schoolId, userProfile?.id || '', userProfile?.email || '', 'teacher_removed', {
-        teacherName: `${teacher.firstName} ${teacher.lastName}`,
-      });
-
+      await deleteOneTeacher(teacher);
       await load();
     } catch (err) {
       setError('Failed to remove teacher: ' + err.message);
     }
+  }
+
+  // ── BULK SELECT / ACTIONS ────────────────────────────────────────
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAllVisible() {
+    setSelectedIds(prev => {
+      const allVisible = teachers.map(t => t.id);
+      const allSelected = allVisible.length > 0 && allVisible.every(id => prev.has(id));
+      return allSelected ? new Set() : new Set(allVisible);
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  async function handleBulkDeleteTeachers() {
+    const targets = teachers.filter(t => selectedIds.has(t.id));
+    if (targets.length === 0) return;
+    if (!window.confirm(
+      `Permanently delete ${targets.length} selected teacher(s)?\n\n` +
+      `This PERMANENTLY removes each teacher and their login profile. This cannot be undone.`
+    )) return;
+    setBulkBusy(true);
+    setError('');
+    let failed = 0;
+    for (const t of targets) {
+      try { await deleteOneTeacher(t); }
+      catch { failed++; }
+    }
+    clearSelection();
+    await load();
+    setBulkBusy(false);
+    if (failed > 0) setError(`${failed} of ${targets.length} could not be deleted.`);
   }
 
   function getNames(ids, items) {
@@ -461,10 +501,30 @@ export default function Teachers() {
             <p>No teachers yet. Use Quick Add above or <strong>+ Full Add</strong> for more options.</p>
           </div>
         ) : (
+          <>
+            {selectedIds.size > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12,
+              }}>
+                <strong style={{ fontSize: '.84rem' }}>{selectedIds.size} selected</strong>
+                <button className="btn btn-danger btn-sm" disabled={bulkBusy} onClick={handleBulkDeleteTeachers}>
+                  🗑 Delete Selected
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={clearSelection}>✕ Clear</button>
+              </div>
+            )}
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={teachers.length > 0 && teachers.every(t => selectedIds.has(t.id))}
+                      onChange={toggleSelectAllVisible}
+                    />
+                  </th>
                   <th>#</th><th>Name</th><th>Email</th><th>Phone</th>
                   <th>Classes</th><th>Subjects</th><th>Last Login</th><th>Status</th><th></th>
                 </tr>
@@ -477,6 +537,9 @@ export default function Teachers() {
                   const lastLogin = loginTimes[t.id] || loginTimes[t.email] || null;
                   return (
                     <tr key={t.id}>
+                      <td>
+                        <input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleSelect(t.id)} />
+                      </td>
                       <td style={{ color: 'var(--text-lt)', width: 30 }}>{i + 1}</td>
                       <td style={{ fontWeight: 700 }}>{t.lastName}, {t.firstName}</td>
                       <td style={{ fontSize: '.8rem', color: 'var(--text-mid)' }}>{t.email}</td>
@@ -513,6 +576,7 @@ export default function Teachers() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
