@@ -202,6 +202,9 @@ export default function Students() {
   const [sortBy,      setSortBy]      = useState('name');   // name | code | class | status | gender
   const [sortDir,     setSortDir]     = useState('asc');    // asc | desc
   const [viewMode,    setViewMode]    = useState('table');  // table | card | kanban | tree
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkClass,   setBulkClass]   = useState('');
+  const [bulkBusy,    setBulkBusy]    = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({}); // for tree view
   const [modal,       setModal]       = useState(null);
   const [selected,    setSelected]    = useState(null);
@@ -383,6 +386,65 @@ export default function Students() {
     } catch (err) {
       setError('Failed to remove student: ' + err.message);
     }
+  }
+
+  // ── BULK SELECT / ACTIONS ────────────────────────────────────────
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAllVisible() {
+    setSelectedIds(prev => {
+      const allVisible = sorted.map(s => s.id);
+      const allSelected = allVisible.length > 0 && allVisible.every(id => prev.has(id));
+      return allSelected ? new Set() : new Set(allVisible);
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  async function handleBulkDelete() {
+    const targets = students.filter(s => selectedIds.has(s.id));
+    if (targets.length === 0) return;
+    if (!window.confirm(
+      `Permanently delete ${targets.length} selected student(s)?\n\n` +
+      `This PERMANENTLY removes each student and their enrollment record. This cannot be undone.`
+    )) return;
+    setBulkBusy(true);
+    setError('');
+    let failed = 0;
+    for (const s of targets) {
+      try { await deleteStudentPermanently(schoolId, s.id); }
+      catch { failed++; }
+    }
+    clearSelection();
+    await load();
+    setBulkBusy(false);
+    if (failed > 0) setError(`${failed} of ${targets.length} could not be deleted.`);
+  }
+
+  async function handleBulkEnroll() {
+    if (!bulkClass) return;
+    const targets = students.filter(s => selectedIds.has(s.id));
+    if (targets.length === 0) return;
+    if (!window.confirm(
+      `Enroll ${targets.length} selected student(s) into "${classMap[bulkClass]?.name}"?\n\n` +
+      `Anyone already enrolled elsewhere will be moved.`
+    )) return;
+    setBulkBusy(true);
+    setError('');
+    let failed = 0;
+    for (const s of targets) {
+      try { await enrollStudent(schoolId, s.id, bulkClass, school?.academicYear || '', school?.currentTerm || '1'); }
+      catch { failed++; }
+    }
+    clearSelection();
+    setBulkClass('');
+    await load();
+    setBulkBusy(false);
+    if (failed > 0) setError(`${failed} of ${targets.length} could not be enrolled.`);
   }
 
   // Shared action buttons — used by Table and Card views (Kanban and Tree
@@ -715,6 +777,26 @@ export default function Students() {
           </span>
         </div>
 
+        {isAdmin && viewMode === 'table' && selectedIds.size > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12,
+          }}>
+            <strong style={{ fontSize: '.84rem' }}>{selectedIds.size} selected</strong>
+            <select value={bulkClass} onChange={e => setBulkClass(e.target.value)} style={{ minWidth: 140 }}>
+              <option value="">Enroll in class…</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <button className="btn btn-primary btn-sm" disabled={!bulkClass || bulkBusy} onClick={handleBulkEnroll}>
+              {bulkBusy ? '…' : 'Apply'}
+            </button>
+            <button className="btn btn-danger btn-sm" disabled={bulkBusy} onClick={handleBulkDelete}>
+              🗑 Delete Selected
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={clearSelection}>✕ Clear</button>
+          </div>
+        )}
+
         {loading ? (
           <div className="spinner-center"><div className="spinner" /></div>
         ) : filtered.length === 0 ? (
@@ -727,6 +809,15 @@ export default function Students() {
             <table>
               <thead>
                 <tr>
+                  {isAdmin && (
+                    <th style={{ width: 28 }}>
+                      <input
+                        type="checkbox"
+                        checked={sorted.length > 0 && sorted.every(s => selectedIds.has(s.id))}
+                        onChange={toggleSelectAllVisible}
+                      />
+                    </th>
+                  )}
                   <th>ID</th>
                   <th>Name</th>
                   <th>Gender</th>
@@ -741,6 +832,11 @@ export default function Students() {
                   const cls = enr ? classMap[enr.classId] : null;
                   return (
                     <tr key={s.id}>
+                      {isAdmin && (
+                        <td>
+                          <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} />
+                        </td>
+                      )}
                       <td className="td-mono" style={{ fontSize: '.78rem' }}>{s.studentCode}</td>
                       <td style={{ fontWeight: 600 }}>{s.lastName}, {s.firstName}</td>
                       <td style={{ fontSize: '.82rem', color: 'var(--text-mid)' }}>{s.gender}</td>
