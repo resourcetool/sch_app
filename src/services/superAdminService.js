@@ -327,6 +327,28 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
     console.warn('[startFreeTrial] EmailJS notification failed silently:', err?.message);
   });
 
+  // ── CONFIRM TO THE SCHOOL TOO ────────────────────────────────────
+  // Previously, the ONLY confirmation of "you're pending approval" was
+  // the on-screen message right after signup — which they see once,
+  // while already being logged out. If they closed that tab, there was
+  // no durable record telling them what to expect or that they need to
+  // wait for approval at all. This puts the same information in their
+  // inbox so it isn't lost.
+  sendSuperAdminEmail(
+    adminEmail,
+    `✓ Trial Request Received — ${schoolName}`,
+    `Thanks for signing up for SchoolPilot!\n\n` +
+    `Your free trial request for "${schoolName}" has been received and is now awaiting review by ` +
+    `our team. This is a manual step we do for every new school to keep the platform genuine — it ` +
+    `usually takes a few hours.\n\n` +
+    `You'll get another email (and a WhatsApp message) the moment it's approved, and you'll be able ` +
+    `to log in immediately with the email and password you just created.\n\n` +
+    `Questions in the meantime? Reach us on WhatsApp at 0549548274.`,
+    'SchoolPilot Team'
+  ).catch(err => {
+    console.warn('[startFreeTrial] School confirmation email failed silently:', err?.message);
+  });
+
   return subscription;
 }
 
