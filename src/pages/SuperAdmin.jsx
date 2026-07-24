@@ -49,14 +49,26 @@ import {
 // ── HELPERS ───────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
+  // This map used to be missing several real statuses that
+  // getSubscriptionStatus() actually returns — pending_approval,
+  // trial_ending, trial_ended, rejected, deletion_requested all fell
+  // through to the "none"/"No Sub" fallback below. That's exactly why a
+  // brand new trial signup (status: 'pending_approval') looked like it
+  // had NO subscription at all in the Schools list, even though the
+  // subscription document was created correctly with plan: 'trial'.
   const map = {
-    active:    { cls: 'badge-success', label: 'Active'      },
-    expiring:  { cls: 'badge-warning', label: 'Expiring'    },
-    grace:     { cls: 'badge-danger',  label: 'Grace Period'},
-    expired:   { cls: 'badge-danger',  label: 'Expired'     },
-    suspended: { cls: 'badge-neutral', label: 'Suspended'   },
-    none:      { cls: 'badge-neutral', label: 'No Sub'      },
-    trial:     { cls: 'badge-info',    label: 'Trial'       },
+    active:             { cls: 'badge-success', label: 'Active'            },
+    expiring:           { cls: 'badge-warning', label: 'Expiring Soon'     },
+    grace:              { cls: 'badge-danger',  label: 'Grace Period'      },
+    expired:            { cls: 'badge-danger',  label: 'Expired'           },
+    suspended:          { cls: 'badge-neutral', label: 'Suspended'         },
+    none:               { cls: 'badge-neutral', label: 'No Sub'            },
+    trial:              { cls: 'badge-info',    label: 'Trial'             },
+    trial_ending:       { cls: 'badge-warning', label: 'Trial Ending Soon' },
+    trial_ended:        { cls: 'badge-danger',  label: 'Trial Ended'       },
+    pending_approval:   { cls: 'badge-warning', label: '⏳ Pending Approval' },
+    rejected:           { cls: 'badge-danger',  label: 'Rejected'          },
+    deletion_requested: { cls: 'badge-neutral', label: 'Deletion Requested'},
   };
   const d = map[status] || map.none;
   return <span className={`badge ${d.cls}`}>{d.label}</span>;
@@ -1087,10 +1099,14 @@ function EmailComposerPanel({ schools, userProfile }) {
   const [bulkFilter, setBulkFilter] = useState('all'); // 'all' | 'active' | 'trial' | 'expired'
 
   const bulkTargets = schools.filter(s => {
+    const computedStatus = getSubscriptionStatus(s.subscription);
     if (bulkFilter === 'all')     return true;
-    if (bulkFilter === 'active')  return s.subscription?.status === 'active' && s.subscription?.plan !== 'trial';
-    if (bulkFilter === 'trial')   return s.subscription?.plan   === 'trial';
-    if (bulkFilter === 'expired') return ['expired','trial_ended','grace'].includes(s.subscription?.status);
+    if (bulkFilter === 'active')  return computedStatus === 'active' && s.subscription?.plan !== 'trial';
+    if (bulkFilter === 'trial')   return s.subscription?.plan === 'trial';
+    // 'grace' and 'expired' are COMPUTED statuses (derived from
+    // expiresAt) — they're never the literal stored subscription.status
+    // field, so checking the raw field here never matched anything.
+    if (bulkFilter === 'expired') return ['expired', 'trial_ended', 'grace'].includes(computedStatus);
     return true;
   }).filter(s => s.subscription?.adminEmail || s.email);
 
@@ -1176,10 +1192,11 @@ function EmailComposerPanel({ schools, userProfile }) {
                     }}
                   >
                     {label} ({(schools.filter(s => {
+                      const computedStatus = getSubscriptionStatus(s.subscription);
                       if (f === 'all')     return s.subscription?.adminEmail || s.email;
-                      if (f === 'active')  return s.subscription?.status === 'active' && s.subscription?.plan !== 'trial';
+                      if (f === 'active')  return computedStatus === 'active' && s.subscription?.plan !== 'trial';
                       if (f === 'trial')   return s.subscription?.plan === 'trial';
-                      if (f === 'expired') return ['expired','trial_ended','grace'].includes(s.subscription?.status);
+                      if (f === 'expired') return ['expired', 'trial_ended', 'grace'].includes(computedStatus);
                       return false;
                     })).length})
                   </button>
