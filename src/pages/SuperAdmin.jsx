@@ -1818,6 +1818,13 @@ function SchoolDataBrowser({ schools }) {
   const [sSortDir,      setSSortDir]      = useState('asc');
   const [sViewMode,     setSViewMode]     = useState('table'); // table | card | kanban | tree
   const [sExpandedGroups, setSExpandedGroups] = useState({});
+  const [browserSelectedIds, setBrowserSelectedIds] = useState(() => new Set());
+  const [browserBulkBusy,    setBrowserBulkBusy]    = useState(false);
+
+  // Selection is per-tab/per-school — clear it whenever either changes so
+  // a stale selection can't accidentally get bulk-deleted from a
+  // different tab or school.
+  useEffect(() => { setBrowserSelectedIds(new Set()); }, [dataTab, selectedSchoolId]);
 
   // ── QUICK-ADD STUDENT (on behalf of school) ──────────────────────
   const [sFirst,  setSFirst]  = useState('');
@@ -1865,6 +1872,66 @@ function SchoolDataBrowser({ schools }) {
     } catch (err) {
       alert('Delete failed: ' + err.message);
     }
+  }
+
+  // ── BULK SELECT / ACTIONS (School Data Browser) ───────────────────
+  function browserToggleSelect(id) {
+    setBrowserSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function browserToggleSelectAllVisible() {
+    setBrowserSelectedIds(prev => {
+      const allVisible = sSorted.map(r => r.id);
+      const allSelected = allVisible.length > 0 && allVisible.every(id => prev.has(id));
+      return allSelected ? new Set() : new Set(allVisible);
+    });
+  }
+  function browserClearSelection() { setBrowserSelectedIds(new Set()); }
+
+  async function handleBulkDeleteRecords() {
+    const ids = Array.from(browserSelectedIds);
+    if (ids.length === 0) return;
+    if (!window.confirm(
+      `Move ${ids.length} selected ${dataTab} record(s) to Trash?\n\n` +
+      `Each can be restored individually from the ♻️ Trash tab within ${TRASH_RETENTION_DAYS} days.`
+    )) return;
+    setBrowserBulkBusy(true);
+    let failed = 0;
+    for (const id of ids) {
+      try { await moveRecordToTrash(dataTab, id, userProfile?.email); }
+      catch { failed++; }
+    }
+    browserClearSelection();
+    await loadSchoolData(selectedSchoolId);
+    setBrowserBulkBusy(false);
+    if (failed > 0) alert(`${failed} of ${ids.length} could not be deleted.`);
+  }
+
+  // "Delete All" — bulk-selects and deletes EVERY record currently
+  // matching the active search/filters in this tab (not just what's on
+  // screen if pagination were added later — sSorted already reflects the
+  // full filtered set for this school+tab).
+  async function handleDeleteAllInTab() {
+    if (sSorted.length === 0) return;
+    const confirmText = window.prompt(
+      `⚠ Delete ALL ${sSorted.length} ${dataTab} record(s) currently shown for "${selectedSchool?.name}"?\n\n` +
+      `They'll be moved to Trash and can be restored within ${TRASH_RETENTION_DAYS} days.\n\n` +
+      `Type DELETE ALL to confirm:`
+    );
+    if (confirmText?.trim().toUpperCase() !== 'DELETE ALL') return;
+    setBrowserBulkBusy(true);
+    let failed = 0;
+    for (const r of sSorted) {
+      try { await moveRecordToTrash(dataTab, r.id, userProfile?.email); }
+      catch { failed++; }
+    }
+    browserClearSelection();
+    await loadSchoolData(selectedSchoolId);
+    setBrowserBulkBusy(false);
+    if (failed > 0) alert(`${failed} of ${sSorted.length} could not be deleted.`);
   }
 
   // ── EDIT STUDENT (super admin, on behalf of school) ───────────────
@@ -2652,9 +2719,37 @@ function SchoolDataBrowser({ schools }) {
               </div>
             ) : (
               <div className="table-wrap">
+                {(browserSelectedIds.size > 0 || sSorted.length > 0) && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
+                    background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px', marginBottom: 10,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      {browserSelectedIds.size > 0 && <strong style={{ fontSize: '.84rem' }}>{browserSelectedIds.size} selected</strong>}
+                      {browserSelectedIds.size > 0 && (
+                        <>
+                          <button className="btn btn-danger btn-sm" disabled={browserBulkBusy} onClick={handleBulkDeleteRecords}>
+                            🗑 Delete Selected
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={browserClearSelection}>✕ Clear</button>
+                        </>
+                      )}
+                    </div>
+                    <button className="btn btn-danger btn-sm" disabled={browserBulkBusy} onClick={handleDeleteAllInTab}>
+                      🗑 Delete All ({sSorted.length})
+                    </button>
+                  </div>
+                )}
                 <table>
                   <thead>
                     <tr>
+                      <th style={{ width: 26 }}>
+                        <input
+                          type="checkbox"
+                          checked={sSorted.length > 0 && sSorted.every(r => browserSelectedIds.has(r.id))}
+                          onChange={browserToggleSelectAllVisible}
+                        />
+                      </th>
                       <th style={{ fontSize: '.72rem' }}>ID</th>
                       {(() => {
                         const headers = {
@@ -2676,6 +2771,9 @@ function SchoolDataBrowser({ schools }) {
                   <tbody>
                     {sSorted.map(r => (
                       <tr key={r.id}>
+                        <td>
+                          <input type="checkbox" checked={browserSelectedIds.has(r.id)} onChange={() => browserToggleSelect(r.id)} />
+                        </td>
                         <td className="td-mono" style={{ fontSize: '.68rem', color: 'var(--text-lt)', maxWidth: 80 }}>
                           {r.id?.substring(0, 10)}…
                         </td>
