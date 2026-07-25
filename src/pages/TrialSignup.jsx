@@ -79,6 +79,7 @@ export default function TrialSignup() {
 
     setLoading(true); setGlobalError('');
     let registeredUser = null;
+    let signupFullySucceeded = false;
     try {
       const phoneCheck = validateGhanaPhone(form.phone);
 
@@ -107,33 +108,42 @@ export default function TrialSignup() {
       // Step C: Create pending trial subscription (NOT active — admin must approve)
       await startFreeTrial(school.id, form.schoolName.trim(), form.email.trim(), phoneCheck.normalised);
 
-      // Step D: Record the email & school for display, then SIGN OUT immediately.
-      // This prevents auto-routing to dashboard while pending_approval.
-      // The SubscriptionContext would catch it too, but defence-in-depth:
-      // a logged-out user cannot reach any app route at all.
+      // Signup is now fully, correctly complete: Auth account + school +
+      // profile + pending subscription all exist. From this point on,
+      // NOTHING should be able to roll any of it back — the account is
+      // valid and the user should be able to log back in at any time to
+      // check their approval status (SubscriptionContext shows the
+      // pending-approval screen for them, it doesn't grant dashboard
+      // access), even if the sign-out below has a hiccup.
+      signupFullySucceeded = true;
+
       setSubmittedEmail(form.email.trim());
       setSubmittedSchool(form.schoolName.trim());
-      await logout();
 
-      setStep(2); // show email verification screen (logged-out state)
+      // Step D: Sign out — purely a UX nicety so they land on the "check
+      // your email" screen instead of a logged-in view. This is wrapped
+      // in its OWN try/catch, separate from the rollback logic above: a
+      // failure here must never be treated as "signup failed" (that bug
+      // previously caused fully successful signups to have their account
+      // silently deleted moments later, which is exactly why some users
+      // couldn't log back in at all afterward — there was nothing left to
+      // log into).
+      try {
+        await logout();
+      } catch (logoutErr) {
+        console.warn('[TrialSignup] Sign-out after successful signup failed (non-fatal):', logoutErr.message);
+      }
+
+      setStep(2); // show email verification screen
 
     } catch (err) {
       // ── FULL ROLLBACK ──────────────────────────────────────────
-      // If ANYTHING after the Auth account was created fails (email
-      // verification, or — most importantly — creating the pending trial
-      // subscription itself), we must not leave behind a fully working,
-      // logged-in account with no subscription tracking it at all. That
-      // exact gap used to let a signup that failed partway through remain
-      // silently usable and invisible to super admin monitoring.
-      //
-      // registerAdmin() already cleans up school/user docs if IT fails
-      // internally. This handles the case where registerAdmin() SUCCEEDED
-      // but a later step didn't: delete the user profile (allowed — an
-      // admin can delete their own profile) and delete the Auth account
-      // itself (a user can always delete their own current session),
-      // then force sign-out no matter what, so nothing is ever left
-      // logged in after an error here.
-      if (registeredUser && err.code !== 'auth/email-already-in-use') {
+      // Only reachable if signupFullySucceeded is still false — i.e.
+      // registerAdmin(), sendEmailVerification(), or startFreeTrial()
+      // itself failed. If ANYTHING after the Auth account was created
+      // fails there, we must not leave behind a fully working, logged-in
+      // account with no subscription tracking it at all.
+      if (!signupFullySucceeded && registeredUser && err.code !== 'auth/email-already-in-use') {
         try {
           await deleteDoc(doc(db, 'users', registeredUser.uid));
         } catch (cleanupErr) {
@@ -144,8 +154,8 @@ export default function TrialSignup() {
         } catch (cleanupErr) {
           console.warn('[TrialSignup] Could not delete Auth account after failed signup:', cleanupErr.message);
         }
+        try { await logout(); } catch { /* already signed out or never fully signed in */ }
       }
-      try { await logout(); } catch { /* already signed out or never fully signed in */ }
 
       if (err.code === 'auth/email-already-in-use') {
         setErrors(e => ({ ...e, email: 'This email is already registered. Try signing in.' }));
