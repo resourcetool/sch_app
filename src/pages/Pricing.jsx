@@ -45,6 +45,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { PLANS, getPlanPrice, getTermlySaving } from '../services/subscriptionService';
 import { useAuth } from '../contexts/AuthContext';
+import MoMoPayButton from '../components/common/MoMoPayButton';
 
 const WHATSAPP_BASE = 'https://wa.me/233549548274';
 const wa = (msg) => `${WHATSAPP_BASE}?text=${encodeURIComponent(msg)}`;
@@ -171,9 +172,18 @@ function ROICalculator() {
 
 // ── PLAN CARD ─────────────────────────────────────────────────────
 function PlanCard({ plan, cycle, isDecoy }) {
+  // Hooks must run unconditionally (Rules of Hooks) — the trial-plan
+  // early return now happens AFTER this, not before.
+  const [showPay, setShowPay] = useState(false);
+
   if (plan.id === 'trial') return null;
   const price  = getPlanPrice(plan.id, cycle);
   const saving = getTermlySaving(plan.id);
+
+  // TECHNIQUE: unit-price framing — a lump sum feels big, a daily
+  // figure feels small. periodDays matches the billing cycle chosen.
+  const periodDays = cycle === 'termly' ? 90 : 30;
+  const perDay = Math.max(1, Math.round(price / periodDays));
 
   const features = {
     starter: ['Students up to 200','Classes & subjects','Score entry','PDF report cards with logo','Teacher accounts','Promotion wizard','Offline mode'],
@@ -267,6 +277,10 @@ function PlanCard({ plan, cycle, isDecoy }) {
               or GHS {plan.termlyPrice || Math.round(plan.price * 2.5)}/term and save GHS {saving}
             </div>
           )}
+          {/* TECHNIQUE: unit-price framing — makes the lump sum feel small */}
+          <div style={{ fontSize: '.72rem', color: '#27AE60', fontWeight: 700, marginTop: 6 }}>
+            ≈ GHS {perDay}/day
+          </div>
         </div>
 
         {/* Divider */}
@@ -298,6 +312,29 @@ function PlanCard({ plan, cycle, isDecoy }) {
         >
           {plan.highlight ? 'Get Started →' : 'Choose ' + plan.name}
         </a>
+
+        {/* Direct MoMo payment — no gateway fees, no waiting on us */}
+        <button
+          onClick={() => setShowPay(s => !s)}
+          style={{
+            display: 'block', width: '100%', textAlign: 'center', marginTop: 8,
+            background: 'transparent', border: 'none', color: '#888',
+            fontSize: '.76rem', fontWeight: 600, cursor: 'pointer', padding: '6px',
+          }}
+        >
+          {showPay ? '▲ Hide payment options' : '💳 Pay now via MoMo'}
+        </button>
+        {showPay && (
+          <div style={{ marginTop: 6 }}>
+            <MoMoPayButton amount={price} planName={plan.name} compact />
+          </div>
+        )}
+
+        {/* TECHNIQUE: risk reversal — stated plainly, next to the price,
+            not buried in the FAQ */}
+        <div style={{ fontSize: '.7rem', color: '#aaa', textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
+          🔒 If it doesn't work out, nothing is ever lost — your data stays safe, always.
+        </div>
       </div>
     </div>
   );
