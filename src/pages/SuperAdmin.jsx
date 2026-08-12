@@ -207,6 +207,7 @@ function RenewModal({ school, onClose, onRenewed }) {
     amountPaid:  '',
     notes:       '',
     backupAddon: school.subscription?.backupAddon || false,
+    termEndDate: '', // optional — YYYY-MM-DD, anchors expiry to the real term end instead of a flat duration
   });
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
@@ -217,9 +218,10 @@ function RenewModal({ school, onClose, onRenewed }) {
     setLoading(true);
     setError('');
     try {
+      const termEndDateMs = form.termEndDate ? new Date(form.termEndDate).getTime() : null;
       await renewSubscription(
         school.id, form.plan, form.paymentRef, Number(form.amountPaid),
-        form.notes, form.backupAddon, form.cycle,
+        form.notes, form.backupAddon, form.cycle, termEndDateMs,
       );
       onRenewed && onRenewed();
       onClose();
@@ -333,6 +335,20 @@ function RenewModal({ school, onClose, onRenewed }) {
                   onChange={e => setForm(f => ({ ...f, amountPaid: e.target.value }))}
                   placeholder={expectedAmount}
                 />
+              </div>
+              <div className="form-group full">
+                <label>Actual Term-End Date (optional)</label>
+                <input
+                  type="date"
+                  value={form.termEndDate}
+                  onChange={e => setForm(f => ({ ...f, termEndDate: e.target.value }))}
+                />
+                <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
+                  If this school told you when their term actually ends, set it here — access will
+                  run until that date (+7 day grace) instead of a flat {billing.durationDays}-day count.
+                  This closes the gap where a school pays right before results are due and the fixed
+                  window doesn't line up with a real renewal point. Leave blank to use the default duration.
+                </span>
               </div>
               <div className="form-group full">
                 <label>Notes</label>
