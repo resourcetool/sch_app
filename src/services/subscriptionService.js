@@ -45,7 +45,26 @@ export const BILLING_CYCLES = {
     multiplier:   2.5,
     saving:       'Save half a month every term',
   },
+  annual: {
+    id:           'annual',
+    label:        'Annual',
+    durationDays: 365,
+    // Priced at 9 months instead of 12 — bigger saving than termly,
+    // in exchange for a single upfront payment. Improves cash flow
+    // for us and gives schools that can afford it a clear reason to
+    // commit for the year instead of renewing 3x.
+    multiplier:   9,
+    saving:       'Save 3 months — the biggest discount available',
+  },
 };
+
+// ── REFERRAL PROGRAM ──────────────────────────────────────────────
+// A school that refers another paying school gets a free month added
+// to their own expiry once the referred school's first payment is
+// confirmed by super admin. Cheap for us (marginal cost per school is
+// near zero), valuable in tight school-network communities where word
+// of mouth between head teachers carries real weight.
+export const REFERRAL_REWARD_DAYS = 30;
 
 export const PLANS = {
   trial: {
@@ -187,7 +206,28 @@ export const PLAN_SUMMARY = {
 export function getPlanPrice(planId, cycle = 'monthly') {
   const plan = PLANS[planId];
   if (!plan || !plan.price) return 0;
-  return cycle === 'termly' ? (plan.termlyPrice || Math.round(plan.price * 2.5)) : plan.price;
+  if (cycle === 'termly') return plan.termlyPrice || Math.round(plan.price * 2.5);
+  if (cycle === 'annual') return plan.annualPrice || Math.round(plan.price * BILLING_CYCLES.annual.multiplier);
+  return plan.price;
+}
+
+// ── TERM-CALENDAR-BASED EXPIRY ────────────────────────────────────
+// Fixes the "flat 90-day countdown from payment date" gap: a school
+// could time their payment to land right before results are due,
+// getting full value out of the window without it lining up to a real
+// renewal-pressure point. If the admin has set a real term-end date
+// (school.nextTermBegins or an explicit termEndDate), prefer that over
+// a blind duration count — with a short grace window on top so schools
+// aren't cut off mid-report-generation.
+//
+// termEndDateMs: epoch ms of when the CURRENT term actually ends
+//   (e.g. derived from school.nextTermBegins minus a day, or set
+//   explicitly by the admin/super admin).
+// graceDays: extra days after term end before access is restricted —
+//   covers late report generation, not a payment delay tactic.
+export function computeTermBasedExpiry(termEndDateMs, graceDays = 7) {
+  if (!termEndDateMs || typeof termEndDateMs !== 'number') return null;
+  return termEndDateMs + graceDays * 24 * 60 * 60 * 1000;
 }
 
 // Helper — get termly saving vs paying monthly for a full 3-month term
