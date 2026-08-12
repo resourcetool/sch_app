@@ -16,7 +16,7 @@ import {
   updateDoc, deleteDoc, query, orderBy, serverTimestamp, where, writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { PLANS, BILLING_CYCLES, getPlanPrice } from './subscriptionService';
+import { PLANS, BILLING_CYCLES, getPlanPrice, computeTermBasedExpiry } from './subscriptionService';
 
 // ── SUPER ADMIN CONFIG ────────────────────────────────────────────
 
@@ -444,7 +444,13 @@ export async function getPendingTrials() {
 // Monthly is never forced — termly is simply the default because it fits
 // how Ghanaian schools already budget (per term, not per month), and it
 // gives a small built-in saving over paying 4 separate months.
-export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false, cycle = 'termly') {
+// termEndDateMs (optional): the school's REAL term-end date, if the admin
+// has set one. When provided, expiry is anchored to that date (+ grace)
+// instead of a blind duration count from payment date — closes the gap
+// where a school could time payment to land right before results are due
+// and get maximum value out of a fixed-length window regardless of when
+// renewal pressure should actually apply.
+export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, notes, backupAddon = false, cycle = 'termly', termEndDateMs = null) {
   const snap = await getDoc(doc(db, 'subscriptions', schoolId));
   if (!snap.exists()) throw new Error('School subscription not found');
 
@@ -455,9 +461,14 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
   const now          = Date.now();
   const baseDate     = existing.expiresAt > now ? existing.expiresAt : now;
   // Trial plan keeps its fixed 21-day duration; paid plans use the chosen
-  // billing cycle's duration (30 days monthly, ~90 days/1 term termly).
+  // billing cycle's duration (30 days monthly, ~90 days/1 term termly)
+  // UNLESS a real term-end date was supplied, in which case that takes
+  // priority — see computeTermBasedExpiry() in subscriptionService.js.
   const durationDays = planId === 'trial' ? plan_data.durationDays : billingCycle.durationDays;
-  const expiresAt    = baseDate + durationDays * 24 * 60 * 60 * 1000;
+  const termBasedExpiry = (planId !== 'trial' && termEndDateMs)
+    ? computeTermBasedExpiry(termEndDateMs)
+    : null;
+  const expiresAt = termBasedExpiry || (baseDate + durationDays * 24 * 60 * 60 * 1000);
 
   const updated = {
     plan: planId,
