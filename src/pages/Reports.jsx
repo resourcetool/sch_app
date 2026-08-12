@@ -19,11 +19,13 @@ import {
   generateStudentReportPDF, generateClassReportPDF, downloadPDF,
 } from '../services/reportService';
 import ReportCustomizer from '../components/ReportCustomizer';
+import UpsellModal from '../components/common/UpsellModal';
 
 export default function Reports() {
   const { school, classes, subjects, schoolId } = useSchool();
   const { userProfile } = useAuth();
-  const { can, watermark } = useSubscription();
+  const { can, watermark, subscription } = useSubscription();
+  const [showUpsell, setShowUpsell] = useState(false);
 
   const isAdmin = userProfile?.role === 'admin';
 
@@ -110,11 +112,23 @@ export default function Reports() {
       return;
     }
 
+    // Capture trial state BEFORE generating — this call may itself end the
+    // trial (checkAndEndTrialOnMilestone fires inside generateResults()).
+    // If they were on an active trial going in, this is their first report.
+    const wasActiveTrial = subscription?.plan === 'trial' && subscription?.status !== 'trial_ended';
+
     setGenerating(true);
     try {
       const scale = school?.gradingScale?.length ? school.gradingScale : defaultGradingScale();
       await generateResults(schoolId, filters.classId, filters.academicYear, filters.term, scale);
       await load();
+
+      // PSYCHOLOGY: fire the upsell at peak value — right after they see
+      // their first report generated — not on a generic later reminder.
+      // Shown once per school per browser session.
+      if (wasActiveTrial && schoolId && !sessionStorage.getItem(`upsell_shown_${schoolId}`)) {
+        setShowUpsell(true);
+      }
     } catch (err) { alert('Error: ' + err.message); }
     finally { setGenerating(false); }
   }
@@ -387,6 +401,7 @@ export default function Reports() {
       </div>
 
       {showCustomizer && <ReportCustomizer onClose={() => setShowCustomizer(false)} />}
+      {showUpsell && <UpsellModal schoolId={schoolId} onClose={() => setShowUpsell(false)} />}
     </div>
   );
 }
