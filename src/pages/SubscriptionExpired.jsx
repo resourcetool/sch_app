@@ -21,6 +21,7 @@ import {
   PLANS, daysUntilDelete, BILLING_CYCLES, getPlanPrice, getTermlySaving,
   PLAN_FEATURE_LIST, PLAN_SUMMARY,
 } from '../services/subscriptionService';
+import MoMoPayButton from '../components/common/MoMoPayButton';
 
 const SUPPORT_PHONE      = '0549548274';
 const SUPPORT_PHONE_INTL = '233549548274';
@@ -89,8 +90,8 @@ export default function SubscriptionExpired() {
               <div style={{ fontWeight: 700, color: '#e65100', marginBottom: 6, fontSize: '.85rem' }}>🔐 No surprise charges, ever</div>
               <div style={{ fontSize: '.8rem', color: '#bf6000', lineHeight: 1.6 }}>
                 We don't store card details or auto-charge your Mobile Money. You decide if and
-                when to pay — nothing happens automatically. Until you subscribe, your account is
-                simply read-only: you can view everything, but can't add new data.
+                when to pay — nothing happens automatically. Choose a plan below to pick up
+                exactly where you left off — nothing was lost.
               </div>
             </div>
           </>
@@ -186,9 +187,14 @@ export default function SubscriptionExpired() {
                       </div>
                     </div>
                     {isOpen && (
-                      <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: '.76rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>
-                        {(PLAN_FEATURE_LIST[planId] || []).map(f => <li key={f}>{f}</li>)}
-                      </ul>
+                      <>
+                        <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: '.76rem', color: 'var(--text-mid)', lineHeight: 1.7 }}>
+                          {(PLAN_FEATURE_LIST[planId] || []).map(f => <li key={f}>{f}</li>)}
+                        </ul>
+                        <div style={{ marginTop: 12 }} onClick={e => e.stopPropagation()}>
+                          <MoMoPayButton amount={price} planName={p.name} compact />
+                        </div>
+                      </>
                     )}
                   </div>
                 );
