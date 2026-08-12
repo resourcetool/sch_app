@@ -46,7 +46,7 @@ function SubscriptionGuard({ children }) {
   const { userProfile }     = useAuth();
   if (loading) return null;
   if (isSuperAdmin(userProfile?.email)) return children;
-  if (status === 'expired' || status === 'suspended') return <SubscriptionExpired />;
+  if (status === 'expired' || status === 'suspended' || status === 'trial_ended') return <SubscriptionExpired />;
   return children;
 }
 
