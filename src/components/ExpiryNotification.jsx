@@ -9,7 +9,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import { useAuth }         from '../contexts/AuthContext';
-import { daysRemaining }   from '../services/subscriptionService';
+import { daysRemaining, getPlanPrice } from '../services/subscriptionService';
 
 const SUPPORT_PHONE_INTL = '233549548274';
 
@@ -81,6 +81,13 @@ export default function ExpiryNotification() {
               : 'Renew now to avoid read-only mode. Your data is always safe — it is never deleted due to non-payment.'
             }
           </div>
+
+          {/* TECHNIQUE: unit-price framing at the actual renewal decision moment */}
+          {!isTrial && plan?.id && (
+            <div style={{ fontSize: '.78rem', color: '#1a1a2e', fontWeight: 700, marginTop: 6 }}>
+              Renewing {plan.name} costs ≈ GHS {Math.max(1, Math.round(getPlanPrice(plan.id, subscription?.billingCycle) / (subscription?.billingCycle === 'termly' ? 90 : 30)))}/day
+            </div>
+          )}
 
           {/* Trust message */}
           <div style={{
