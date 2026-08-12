@@ -38,6 +38,11 @@ export default function TrialBanner() {
             assessment, or after 21 days — whichever happens first. No card on file,
             nothing is ever auto-charged.
           </div>
+          {/* TECHNIQUE: unit-price framing + risk reversal, right where the
+              decision actually gets made — not buried on the Pricing page */}
+          <div style={{ fontSize: '.74rem', color: urgent ? '#e65100' : '#0d47a1', fontWeight: 600, marginTop: 4 }}>
+            Plans start from ≈ GHS 5/day · Nothing is ever lost if you pause
+          </div>
         </div>
       </div>
       <a
