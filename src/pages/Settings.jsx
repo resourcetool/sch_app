@@ -908,6 +908,19 @@ export default function Settings() {
                 <option value="3">Term 3</option>
               </select>
             </div>
+            <div className="form-group">
+              <label>When Does This Term End?</label>
+              <input
+                type="date"
+                value={sf.termEndDate ? new Date(sf.termEndDate).toISOString().slice(0, 10) : ''}
+                onChange={e => up('termEndDate', e.target.value ? new Date(e.target.value).getTime() : null)}
+              />
+              <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginTop: 2 }}>
+                Used by super admin when renewing your subscription — keeps your access
+                lined up with your real school calendar instead of a fixed day count.
+                Update this at the start of every term.
+              </div>
+            </div>
           </div>
           <div style={{ marginTop: 20 }}>
             <button onClick={saveSchoolInfo} className={`btn ${saved === 'school' ? 'btn-success' : 'btn-primary'}`} disabled={saving}>
