@@ -277,7 +277,7 @@ export async function checkTrialEligibility(email, phone) {
   return { eligible: true };
 }
 
-export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhone) {
+export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhone, declaredTermEndDate = null) {
   const eligibility = await checkTrialEligibility(adminEmail, adminPhone);
   if (!eligibility.eligible) {
     throw new Error(eligibility.reason);
@@ -304,6 +304,11 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
     trialPhone:   adminPhone.replace(/\D/g, ''),
     isTrial:      true,
     paymentHistory: [],
+    // Optional, self-reported by the school at signup — purely informational
+    // for super admin's approval judgment (see the timing flag in the
+    // Requests tab). Never used to auto-approve, auto-reject, or change
+    // trial duration/behavior in any way.
+    declaredTermEndDate: declaredTermEndDate ? new Date(declaredTermEndDate).getTime() : null,
   };
 
   await setDoc(doc(db, 'subscriptions', schoolId), subscription);
