@@ -1,59 +1,48 @@
-import React from 'react'; import PolicyLayout from './PolicyLayout';
+import React, { useState } from 'react'; import PolicyLayout from './PolicyLayout';
 import { Link } from 'react-router-dom';
 import { getPlanPrice, getTermlySaving, BACKUP_ADDON_PRICE, BACKUP_ADDON_TERMLY_PRICE } from '../../services/subscriptionService';
+import { BillingCycleToggle, LivePlanPriceTable, ROICalculator } from '../../components/common/PricingCalculator';
 
 export default function SubscriptionPolicy() {
+  const [cycle, setCycle] = useState('termly');
+
   return (
-    <PolicyLayout title="Subscription Policy" lastUpdated="July 2026">
+    <PolicyLayout title="Subscription Policy" lastUpdated="August 2026">
       <section>
         <h2>Plans and Pricing</h2>
         <p>
-          You can pay <strong>monthly</strong> or <strong>per term</strong>. Termly is the
-          recommended option — one payment covers a full 3-month term and includes a small
-          saving over paying month by month. Monthly stays available for schools that prefer
-          it; it is never required.
+          You can pay <strong>monthly</strong>, <strong>per term</strong>, or <strong>annually</strong>.
+          Termly is the recommended option for most schools — one payment covers a full 3-month
+          term and includes a built-in saving over paying month by month. Annual billing offers
+          the largest saving of all, for schools that prefer a single yearly payment. Monthly
+          stays available for schools that prefer it; no cycle is ever required.
         </p>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.9rem' }}>
-            <thead>
-              <tr style={{ background: '#0f3460', color: '#fff' }}>
-                {['Plan', 'Price/Month', 'Price/Term (recommended)', 'Students', 'Analytics', 'Backup', 'Support'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                ['Free Trial', 'trial', 'Up to 50', '✕', '✕', 'Standard'],
-                ['Starter',    'starter', 'Up to 200', '✕', '✕', 'Standard'],
-                ['Pro',        'pro',     'Unlimited', '✓', '✕', 'Standard'],
-                ['Premium',    'premium', 'Unlimited', '✓', '✓', 'Priority'],
-              ].map(([label, planId, students, analytics, backup, support], i) => (
-                <tr key={planId} style={{ background: i % 2 === 0 ? '#f8f9ff' : '#fff' }}>
-                  <td style={{ padding: '10px 14px', fontWeight: 700 }}>{label}</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    {planId === 'trial' ? 'GHS 0' : `GHS ${getPlanPrice(planId, 'monthly')}`}
-                  </td>
-                  <td style={{ padding: '10px 14px' }}>
-                    {planId === 'trial'
-                      ? '— (21-day trial)'
-                      : `GHS ${getPlanPrice(planId, 'termly')} (save GHS ${getTermlySaving(planId)})`}
-                  </td>
-                  <td style={{ padding: '10px 14px' }}>{students}</td>
-                  <td style={{ padding: '10px 14px' }}>{analytics}</td>
-                  <td style={{ padding: '10px 14px' }}>{backup}</td>
-                  <td style={{ padding: '10px 14px' }}>{support}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        {/* Interactive pricing tool — same calculator used on the main
+            Pricing page, embedded here so admins can check current costs
+            without leaving this policy page. Both surfaces read from the
+            same live plan config, so the numbers here always match. */}
+        <div style={{ margin: '20px 0', textAlign: 'center' }}>
+          <div style={{ marginBottom: 10, fontSize: '.85rem', color: '#555', fontWeight: 600 }}>
+            Choose a billing cycle to see live pricing below
+          </div>
+          <BillingCycleToggle cycle={cycle} setCycle={setCycle} />
         </div>
+
+        <LivePlanPriceTable cycle={cycle} />
         <p style={{ fontSize: '.85rem', color: '#666', marginTop: 8 }}>
           Analytics (performance charts, class/subject comparisons) is not included in the free
           trial or the Starter plan — it requires Pro or Premium. The Backup add-on can be added
           to Starter or Pro for GHS {BACKUP_ADDON_PRICE}/month or GHS {BACKUP_ADDON_TERMLY_PRICE}/term;
-          it is already included in Premium.
+          it is already included in Premium. The Free Trial is not shown above — it's GHS 0 for
+          up to 50 students, for 21 days or until your first report/finalized assessment,
+          whichever comes first.
         </p>
+
+        <div style={{ margin: '28px 0' }}>
+          <ROICalculator />
+        </div>
+
         <p>
           See the full <Link to="/pricing">Pricing page</Link> for a detailed feature-by-feature
           comparison.
@@ -76,7 +65,8 @@ export default function SubscriptionPolicy() {
         <h2>Subscription Period</h2>
         <ul>
           <li><strong>Monthly billing:</strong> your subscription runs for 30 days from activation.</li>
-          <li><strong>Termly billing (recommended):</strong> your subscription runs for 90 days (one school term) from activation.</li>
+          <li><strong>Termly billing (recommended):</strong> your subscription runs for 90 days (one school term) from activation — or, if you've set your actual term-end date in Settings, until that date plus a 7-day grace period, whichever your super admin applies at renewal.</li>
+          <li><strong>Annual billing:</strong> your subscription runs for 365 days from activation — the largest available saving, in exchange for a single upfront payment.</li>
         </ul>
         <p>You will receive an in-app reminder starting 7 days before your subscription expires, whichever cycle you're on.</p>
       </section>
