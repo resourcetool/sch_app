@@ -46,6 +46,7 @@ import { Link } from 'react-router-dom';
 import { PLANS, getPlanPrice, getTermlySaving } from '../services/subscriptionService';
 import { useAuth } from '../contexts/AuthContext';
 import MoMoPayButton from '../components/common/MoMoPayButton';
+import { ROICalculator } from '../components/common/PricingCalculator';
 
 const WHATSAPP_BASE = 'https://wa.me/233549548274';
 const wa = (msg) => `${WHATSAPP_BASE}?text=${encodeURIComponent(msg)}`;
@@ -70,104 +71,6 @@ function CountUp({ target, suffix = '', prefix = '' }) {
     return () => observer.disconnect();
   }, [target]);
   return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
-}
-
-// ── ROI CALCULATOR ───────────────────────────────────────────────
-// TECHNIQUE 6: Effort Justification — they calculate it themselves
-function ROICalculator() {
-  const [students,    setStudents]    = useState(120);
-  const [teachers,    setTeachers]    = useState(8);
-  const [hrsPerTeacher, setHrs]       = useState(4);
-  const [hourlyWage,  setWage]        = useState(15);
-
-  const teacherCostPerTerm = teachers * hrsPerTeacher * 3 * hourlyWage; // 3 terms/year × hrs × wage
-  const paperCostPerTerm   = Math.round(students * 1.5);  // ~GHS 1.50 per student for report paper/ink
-  const totalWastedPerTerm = teacherCostPerTerm + paperCostPerTerm;
-  const schoolmsProTermly  = 625;
-  const netSavingPerTerm   = totalWastedPerTerm - schoolmsProTermly;
-
-  return (
-    <div style={{
-      background: '#fff', borderRadius: 20,
-      border: '2px solid #0F3460',
-      padding: '28px 24px',
-      boxShadow: '0 8px 40px rgba(15,52,96,.12)',
-    }}>
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>🧮</div>
-        <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#0F3460' }}>
-          Calculate Your School's Real Cost
-        </div>
-        <div style={{ fontSize: '.82rem', color: '#888', marginTop: 4 }}>
-          Enter your school's numbers — see what doing it manually actually costs you
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
-        {[
-          { label: 'Number of students', value: students, set: setStudents, min: 20, max: 2000, step: 10 },
-          { label: 'Number of teachers', value: teachers, set: setTeachers, min: 1, max: 50, step: 1 },
-          { label: 'Hours each teacher spends on reports per term', value: hrsPerTeacher, set: setHrs, min: 1, max: 20, step: 1 },
-          { label: 'Estimated hourly value of a teacher\'s time (GHS)', value: hourlyWage, set: setWage, min: 5, max: 100, step: 5 },
-        ].map(({ label, value, set, min, max, step }) => (
-          <div key={label}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: '.82rem', color: '#555' }}>{label}</span>
-              <span style={{ fontWeight: 800, color: '#0F3460', fontSize: '.88rem' }}>{value.toLocaleString()}</span>
-            </div>
-            <input
-              type="range" min={min} max={max} step={step} value={value}
-              onChange={e => set(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#0F3460' }}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Results */}
-      <div style={{ background: '#f7f9fc', borderRadius: 14, padding: '18px 20px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.84rem', color: '#666' }}>
-            <span>Teacher time cost per term</span>
-            <span style={{ fontWeight: 700, color: '#E94560' }}>GHS {teacherCostPerTerm.toLocaleString()}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.84rem', color: '#666' }}>
-            <span>Paper, printing & ink per term</span>
-            <span style={{ fontWeight: 700, color: '#E94560' }}>GHS {paperCostPerTerm.toLocaleString()}</span>
-          </div>
-          <div style={{ height: 1, background: '#e0e0e0' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.88rem', color: '#333' }}>
-            <span style={{ fontWeight: 700 }}>Total manual cost per term</span>
-            <span style={{ fontWeight: 900, color: '#E94560', fontSize: '1rem' }}>GHS {totalWastedPerTerm.toLocaleString()}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.88rem', color: '#333' }}>
-            <span style={{ fontWeight: 700 }}>SchoolPilot Pro (per term)</span>
-            <span style={{ fontWeight: 900, color: '#27AE60', fontSize: '1rem' }}>GHS {schoolmsProTermly.toLocaleString()}</span>
-          </div>
-          <div style={{ height: 1, background: '#e0e0e0' }} />
-          <div style={{
-            display: 'flex', justifyContent: 'space-between',
-            padding: '10px 14px', borderRadius: 10,
-            background: netSavingPerTerm > 0 ? '#e8f5e9' : '#fff3e0',
-          }}>
-            <span style={{ fontWeight: 800, fontSize: '.9rem', color: netSavingPerTerm > 0 ? '#2e7d32' : '#e65100' }}>
-              {netSavingPerTerm > 0 ? '✓ You save per term' : 'Cost difference'}
-            </span>
-            <span style={{ fontWeight: 900, fontSize: '1.1rem', color: netSavingPerTerm > 0 ? '#27AE60' : '#e65100' }}>
-              GHS {Math.abs(netSavingPerTerm).toLocaleString()}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {netSavingPerTerm > 0 && (
-        <div style={{ marginTop: 12, fontSize: '.78rem', color: '#888', textAlign: 'center', lineHeight: 1.6 }}>
-          Based on your numbers, SchoolPilot pays for itself and saves you an additional<br />
-          <strong style={{ color: '#27AE60' }}>GHS {netSavingPerTerm.toLocaleString()}</strong> in recovered teacher time and reduced paper costs — every single term.
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── PLAN CARD ─────────────────────────────────────────────────────
