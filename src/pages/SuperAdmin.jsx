@@ -1534,6 +1534,36 @@ function ActivityLogPanel({ schools }) {
 }
 
 // ── PENDING TRIAL REQUESTS PANEL ─────────────────────────────────
+
+// Purely informational — never blocks or auto-decides anything. Shows
+// how close the school's self-reported term-end is, so super admin can
+// factor timing into their own approval judgment (e.g. a request landing
+// a few days before term-end is worth a second look, not an auto-reject —
+// plenty of those are legitimate schools genuinely shopping for next term).
+function TermEndFlag({ declaredTermEndDate }) {
+  if (!declaredTermEndDate) return null;
+  const daysLeft = Math.ceil((declaredTermEndDate - Date.now()) / (24 * 60 * 60 * 1000));
+  const dateLabel = new Date(declaredTermEndDate).toLocaleDateString('en-GH', { day: 'numeric', month: 'short' });
+
+  let label, bg, color;
+  if (daysLeft < 0) {
+    label = `⚠ Said their term ended ${dateLabel} — already past`;
+    bg = '#fce4ec'; color = '#c62828';
+  } else if (daysLeft <= 10) {
+    label = `⚠ Term ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'} (${dateLabel}) — worth a quick check before approving`;
+    bg = '#fff3e0'; color = '#e65100';
+  } else {
+    label = `Term ends ${dateLabel} (${daysLeft} days away)`;
+    bg = '#f0f0f0'; color = '#666';
+  }
+
+  return (
+    <div style={{ background: bg, color, fontSize: '.74rem', fontWeight: 600, padding: '5px 10px', borderRadius: 6, marginTop: 8, display: 'inline-block' }}>
+      {label}
+    </div>
+  );
+}
+
 function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
   const [acting, setActing] = useState(null);
 
@@ -1572,7 +1602,6 @@ function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
           Review and approve or reject below. Approved schools get immediate access.
         </p>
       </div>
-
       {pendingTrials.length === 0 ? (
         <div className="card">
           <div className="empty-state">
@@ -1595,6 +1624,7 @@ function PendingTrialsPanel({ pendingTrials, userProfile, onRefresh }) {
                     <div>🕐 {trial.requestedAt ? new Date(trial.requestedAt).toLocaleString() : '—'}</div>
                     <div>🔑 {trial.schoolId?.substring(0, 12)}…</div>
                   </div>
+                  <TermEndFlag declaredTermEndDate={trial.declaredTermEndDate} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexShrink: 0 }}>
                   <button
