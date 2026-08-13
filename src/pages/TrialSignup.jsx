@@ -34,6 +34,7 @@ export default function TrialSignup() {
     schoolName: '', address: '',
     academicYear: new Date().getFullYear() + '/' + (new Date().getFullYear() + 1),
     currentTerm: '1',
+    termEndDate: '', // optional — helps super admin judge approval timing, never blocks signup
     agreedToTerms: false,
   });
   const [errors,      setErrors]      = useState({});
@@ -106,7 +107,10 @@ export default function TrialSignup() {
       }
 
       // Step C: Create pending trial subscription (NOT active — admin must approve)
-      await startFreeTrial(school.id, form.schoolName.trim(), form.email.trim(), phoneCheck.normalised);
+      await startFreeTrial(
+        school.id, form.schoolName.trim(), form.email.trim(), phoneCheck.normalised,
+        form.termEndDate || null,
+      );
 
       // Signup is now fully, correctly complete: Auth account + school +
       // profile + pending subscription all exist. From this point on,
@@ -358,6 +362,13 @@ export default function TrialSignup() {
                 <option value="2">Term 2</option>
                 <option value="3">Term 3</option>
               </select>
+            </div>
+            <div className="form-group">
+              <label>When Does This Term End? <span style={{ fontWeight: 400, color: 'var(--text-lt)' }}>(optional)</span></label>
+              <input type="date" value={form.termEndDate} onChange={e => update('termEndDate', e.target.value)} />
+              <div style={{ fontSize: '.7rem', color: 'var(--text-lt)', marginTop: 2 }}>
+                Helps us review your request faster — never affects approval either way.
+              </div>
             </div>
           </div>
 
