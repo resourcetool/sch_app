@@ -200,6 +200,13 @@ function GenerateCodeModal({ onClose, onGenerated, prefilledSchool = '', prefill
 // ── RENEW MODAL ───────────────────────────────────────────────────
 
 function RenewModal({ school, onClose, onRenewed }) {
+  // Pre-fill from the school's own Settings > Academic Year > "When Does
+  // This Term End?" field, if they've set one — school.termEndDate is a
+  // raw epoch-ms number, the <input type="date"> needs YYYY-MM-DD.
+  const schoolTermEndPrefill = school.termEndDate
+    ? new Date(school.termEndDate).toISOString().slice(0, 10)
+    : '';
+
   const [form, setForm] = useState({
     plan:        school.subscription?.plan  || 'pro',
     cycle:       school.subscription?.billingCycle || 'termly', // termly is the default/recommended cycle
@@ -207,7 +214,10 @@ function RenewModal({ school, onClose, onRenewed }) {
     amountPaid:  '',
     notes:       '',
     backupAddon: school.subscription?.backupAddon || false,
-    termEndDate: '', // optional — YYYY-MM-DD, anchors expiry to the real term end instead of a flat duration
+    // REQUIRED — no more flat-duration fallback. Pre-filled from the
+    // school's own Settings if they've set one; super admin can still
+    // override it (terms shift, dates get typo'd) but cannot submit blank.
+    termEndDate: schoolTermEndPrefill,
   });
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
@@ -215,10 +225,17 @@ function RenewModal({ school, onClose, onRenewed }) {
   async function handleRenew(e) {
     e.preventDefault();
     if (!form.paymentRef) { setError('Enter MoMo reference'); return; }
+    if (!form.termEndDate) {
+      setError(
+        'Term-end date is required before renewing. If the school hasn\'t set it in ' +
+        'Settings → Academic Year, enter it manually below — ask them if you\'re not sure.'
+      );
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const termEndDateMs = form.termEndDate ? new Date(form.termEndDate).getTime() : null;
+      const termEndDateMs = new Date(form.termEndDate).getTime();
       await renewSubscription(
         school.id, form.plan, form.paymentRef, Number(form.amountPaid),
         form.notes, form.backupAddon, form.cycle, termEndDateMs,
@@ -337,17 +354,20 @@ function RenewModal({ school, onClose, onRenewed }) {
                 />
               </div>
               <div className="form-group full">
-                <label>Actual Term-End Date (optional)</label>
+                <label>Actual Term-End Date *</label>
                 <input
                   type="date"
+                  required
                   value={form.termEndDate}
                   onChange={e => setForm(f => ({ ...f, termEndDate: e.target.value }))}
+                  style={!form.termEndDate ? { border: '1.5px solid #ef5350' } : undefined}
                 />
                 <span style={{ fontSize: '.72rem', color: 'var(--text-lt)' }}>
-                  If this school told you when their term actually ends, set it here — access will
-                  run until that date (+7 day grace) instead of a flat {billing.durationDays}-day count.
-                  This closes the gap where a school pays right before results are due and the fixed
-                  window doesn't line up with a real renewal point. Leave blank to use the default duration.
+                  {schoolTermEndPrefill
+                    ? `Pre-filled from ${school.name}'s Settings — change it if it's out of date.`
+                    : `${school.name} hasn't set this in their Settings yet — enter it manually (ask them if unsure). `}
+                  Required: access runs until this date (+7 day grace) instead of a flat {billing.durationDays}-day
+                  count, so renewal always lines up with when their results are actually due.
                 </span>
               </div>
               <div className="form-group full">
