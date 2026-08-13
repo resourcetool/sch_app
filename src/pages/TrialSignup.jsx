@@ -294,6 +294,32 @@ export default function TrialSignup() {
             </div>
           ))}
         </div>
+
+        {/* Pricing transparency, right at the point of signup decision —
+            some admins want to know what it costs after the trial before
+            they'll even start one, and the answer shouldn't require them
+            to hunt for a separate page. */}
+        <div style={{
+          marginTop: 24, background: 'rgba(255,255,255,.08)', borderRadius: 12,
+          padding: '14px 16px',
+        }}>
+          <div style={{ fontSize: '.8rem', fontWeight: 700, marginBottom: 4 }}>
+            💰 After your trial, plans start from GHS 150/month
+          </div>
+          <div style={{ fontSize: '.76rem', opacity: .85, lineHeight: 1.5, marginBottom: 8 }}>
+            No obligation to pay — you decide when the trial ends whether it's worth it.
+            See exactly what's included at each price before you sign up.
+          </div>
+          <Link
+            to="/pricing"
+            style={{
+              display: 'inline-block', color: '#fff', fontWeight: 700, fontSize: '.78rem',
+              textDecoration: 'underline',
+            }}
+          >
+            See full pricing & what's included →
+          </Link>
+        </div>
       </div>
 
       <div className="auth-right" style={{ overflowY: 'auto' }}>
