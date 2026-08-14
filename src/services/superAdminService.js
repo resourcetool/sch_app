@@ -123,7 +123,7 @@ export async function sendAccessRequestNotification(requestData) {
   // bad address doesn't block notifying the others.
   await Promise.allSettled(
     adminEmails.map(toEmail =>
-      sendSuperAdminEmail(toEmail, `🎓 New Request: ${requestData.schoolName || 'Unknown School'}`, body, 'SchoolPilot')
+      sendSuperAdminEmail(toEmail, `🎓 New Request: ${requestData.schoolName || 'Unknown School'}`, body, 'Schpilot')
         .catch(err => console.warn(`[EmailJS] Notification to ${toEmail} failed:`, err.message))
     )
   );
@@ -441,14 +441,14 @@ export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhon
   sendSuperAdminEmail(
     adminEmail,
     `✓ Trial Request Received — ${schoolName}`,
-    `Thanks for signing up for SchoolPilot!\n\n` +
+    `Thanks for signing up for Schpilot!\n\n` +
     `Your free trial request for "${schoolName}" has been received and is now awaiting review by ` +
     `our team. This is a manual step we do for every new school to keep the platform genuine — it ` +
     `usually takes a few hours.\n\n` +
     `You'll get another email (and a WhatsApp message) the moment it's approved, and you'll be able ` +
     `to log in immediately with the email and password you just created.\n\n` +
     `Questions in the meantime? Reach us on WhatsApp at 0549548274.`,
-    'SchoolPilot Team'
+    'Schpilot Team'
   ).catch(err => {
     console.warn('[startFreeTrial] School confirmation email failed silently:', err?.message);
   });
@@ -480,11 +480,11 @@ export async function approveTrialRequest(trialId, approvedByEmail) {
     if (sub?.adminEmail) {
       await sendSuperAdminEmail(
         sub.adminEmail,
-        `🎉 Your SchoolPilot Trial Is Approved!`,
+        `🎉 Your Schpilot Trial Is Approved!`,
         `Good news — your free trial for "${sub.schoolName}" has been approved!\n\n` +
         `Your trial runs for ${plan_data.durationDays} days, until ${new Date(expiresAt).toLocaleDateString('en-GH', { dateStyle: 'long' })}.\n\n` +
         `Log in now with the email and password you used to sign up to get started.`,
-        'SchoolPilot Team'
+        'Schpilot Team'
       );
     }
   } catch (err) {
@@ -506,12 +506,12 @@ export async function rejectTrialRequest(trialId, reason, rejectedByEmail) {
     if (sub?.adminEmail) {
       await sendSuperAdminEmail(
         sub.adminEmail,
-        `Your SchoolPilot Trial Request`,
+        `Your Schpilot Trial Request`,
         `We've reviewed your trial request for "${sub.schoolName}" and were unable to approve it ` +
         `at this time.\n\nReason: ${reason || 'Did not meet trial requirements'}\n\n` +
         `If you believe this is a mistake or have questions, please reply to this email or reach us ` +
         `on WhatsApp at 0549548274.`,
-        'SchoolPilot Team'
+        'Schpilot Team'
       );
     }
   } catch (err) {
@@ -597,10 +597,10 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
     if (existing.adminEmail) {
       await sendSuperAdminEmail(
         existing.adminEmail,
-        `✓ Your SchoolPilot Subscription Was Renewed`,
+        `✓ Your Schpilot Subscription Was Renewed`,
         `Your ${planId} plan for "${schoolName}" has been renewed, paid ${cycle === 'termly' ? 'per term' : 'monthly'}.\n\n` +
         `Your access now runs until ${new Date(expiresAt).toLocaleDateString('en-GH', { dateStyle: 'long' })}. Thank you!`,
-        'SchoolPilot Team'
+        'Schpilot Team'
       );
     }
   } catch (err) {
@@ -627,11 +627,11 @@ export async function suspendSchool(schoolId, reason) {
     if (adminEmail) {
       await sendSuperAdminEmail(
         adminEmail,
-        `⚠ Your SchoolPilot Account Has Been Suspended`,
-        `Your SchoolPilot account for "${schoolName}" has been suspended.\n\n` +
+        `⚠ Your Schpilot Account Has Been Suspended`,
+        `Your Schpilot account for "${schoolName}" has been suspended.\n\n` +
         `${reason ? `Reason: ${reason}\n\n` : ''}` +
         `If you believe this is a mistake, please reply to this email or reach us on WhatsApp at 0549548274.`,
-        'SchoolPilot Team'
+        'Schpilot Team'
       );
     }
   } catch (err) {
@@ -656,9 +656,9 @@ export async function unsuspendSchool(schoolId) {
     if (adminEmail) {
       await sendSuperAdminEmail(
         adminEmail,
-        `✓ Your SchoolPilot Account Is Active Again`,
-        `Good news — your SchoolPilot account for "${schoolName}" has been reactivated. You can log back in now.`,
-        'SchoolPilot Team'
+        `✓ Your Schpilot Account Is Active Again`,
+        `Good news — your Schpilot account for "${schoolName}" has been reactivated. You can log back in now.`,
+        'Schpilot Team'
       );
     }
   } catch (err) {
@@ -950,7 +950,7 @@ export async function getSchoolActivityLog(schoolId, limitCount = 100) {
 // Set up ONE EmailJS template with these variables and every email type
 // in the app works: {{to_email}}, {{to_name}}, {{from_name}},
 // {{subject}}, {{message}}, {{reply_to}}.
-export async function sendSuperAdminEmail(to, subject, body, fromName = 'SchoolPilot Admin') {
+export async function sendSuperAdminEmail(to, subject, body, fromName = 'Schpilot Admin') {
   const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
   const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID_GENERAL ||
                      import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
@@ -1028,7 +1028,7 @@ export async function requestAccountDeletion(schoolId, adminEmail, reason) {
       await sendSuperAdminEmail(
         toEmail,
         `🗑 Account Deletion Requested — ${schoolName}`,
-        `${adminEmail} has requested to delete their SchoolPilot account for "${schoolName}".\n\n` +
+        `${adminEmail} has requested to delete their Schpilot account for "${schoolName}".\n\n` +
         `Reason: ${reason || 'No reason given'}\n\n` +
         `Their account is now locked (read-only). Data will be permanently deleted after ` +
         `${deleteAfterStr} unless the request is cancelled before then.\n\n` +
