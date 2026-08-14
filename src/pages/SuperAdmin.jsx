@@ -181,7 +181,7 @@ function GenerateCodeModal({ onClose, onGenerated, prefilledSchool = '', prefill
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                 <button onClick={copyCode} className="btn btn-primary">📋 Copy Code</button>
                 <a
-                  href={`https://wa.me/?text=Your SchoolPilot access code is: ${generated.code}%0ASchool: ${generated.schoolName}%0APlan: ${generated.plan.toUpperCase()}%0AExpires in 48 hours.`}
+                  href={`https://wa.me/?text=Your Schpilot access code is: ${generated.code}%0ASchool: ${generated.schoolName}%0APlan: ${generated.plan.toUpperCase()}%0AExpires in 48 hours.`}
                   target="_blank" rel="noreferrer"
                   className="btn btn-success"
                 >
@@ -1201,7 +1201,7 @@ function EmailComposerPanel({ schools, userProfile }) {
       if (mode === 'individual') {
         const email = toEmail.trim() || schools.find(s => s.id === toSchool)?.subscription?.adminEmail;
         if (!email) { setError('Enter an email address or select a school'); setSending(false); return; }
-        await sendSuperAdminEmail(email, subject, body, 'SchoolPilot Team');
+        await sendSuperAdminEmail(email, subject, body, 'Schpilot Team');
         setResult({ sent: [{ email }], failed: [] });
       } else {
         const res = await broadcastEmailToAllSchools(subject, body, bulkTargets);
@@ -1292,7 +1292,7 @@ function EmailComposerPanel({ schools, userProfile }) {
 
           <div className="form-group">
             <label style={{ fontSize: '.75rem' }}>Subject *</label>
-            <input required value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Important update about SchoolPilot" />
+            <input required value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Important update about Schpilot" />
           </div>
 
           <div className="form-group">
@@ -1321,9 +1321,9 @@ function EmailComposerPanel({ schools, userProfile }) {
         <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: '.85rem' }}>Quick Templates</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[
-            ['Payment Reminder', 'Reminder: Your SchoolPilot subscription', 'Dear School Admin,\n\nThis is a friendly reminder that your SchoolPilot subscription is due for renewal.\n\nTo continue enjoying uninterrupted access, please make your payment and contact us on WhatsApp at 0549548274.\n\nThank you for using SchoolPilot.\n\nBest regards,\nSchoolPilot Team'],
-            ['Trial Approved', 'Your SchoolPilot Free Trial is Now Active!', 'Dear School Admin,\n\nGreat news! Your SchoolPilot free trial request has been approved. You can now log in and start setting up your school.\n\nIf you need any help getting started, tap "Help & Support" in the app menu or WhatsApp us at 0549548274.\n\nWelcome to SchoolPilot!\n\nBest regards,\nSchoolPilot Team'],
-            ['System Update', 'Important Update to SchoolPilot', 'Dear School Admin,\n\nWe have made improvements to SchoolPilot. Please log out and log back in to get the latest updates.\n\nIf you experience any issues, contact us on WhatsApp at 0549548274.\n\nThank you.\n\nSchoolPilot Team'],
+            ['Payment Reminder', 'Reminder: Your Schpilot subscription', 'Dear School Admin,\n\nThis is a friendly reminder that your Schpilot subscription is due for renewal.\n\nTo continue enjoying uninterrupted access, please make your payment and contact us on WhatsApp at 0549548274.\n\nThank you for using Schpilot.\n\nBest regards,\nSchpilot Team'],
+            ['Trial Approved', 'Your Schpilot Free Trial is Now Active!', 'Dear School Admin,\n\nGreat news! Your Schpilot free trial request has been approved. You can now log in and start setting up your school.\n\nIf you need any help getting started, tap "Help & Support" in the app menu or WhatsApp us at 0549548274.\n\nWelcome to Schpilot!\n\nBest regards,\nSchpilot Team'],
+            ['System Update', 'Important Update to Schpilot', 'Dear School Admin,\n\nWe have made improvements to Schpilot. Please log out and log back in to get the latest updates.\n\nIf you experience any issues, contact us on WhatsApp at 0549548274.\n\nThank you.\n\nSchpilot Team'],
           ].map(([label, tmplSubject, tmplBody]) => (
             <button
               key={label}

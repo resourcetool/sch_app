@@ -9,7 +9,7 @@
 //    obvious choice. It's close in price but missing key features.
 //    Nobody buys Starter — it just makes Pro feel like a steal.
 //
-// 3. LOSS AVERSION — "What you lose without SchoolPilot" framing.
+// 3. LOSS AVERSION — "What you lose without Schpilot" framing.
 //    People feel losses 2x stronger than equivalent gains.
 //    "You are losing GHS 400 worth of teacher time every term" hurts
 //    more than "you will save GHS 400" feels good.
@@ -32,7 +32,7 @@
 //    support — all free. When you give first, people feel obligated
 //    to give back. The subscription feels like returning a favour.
 //
-// 9. FEAR OF MISSING OUT (FOMO) — "Schools using SchoolPilot get results
+// 9. FEAR OF MISSING OUT (FOMO) — "Schools using Schpilot get results
 //    out 3 hours before schools still doing it manually on speech day."
 //    Paints a vivid picture of being left behind.
 //
@@ -201,7 +201,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
 
         {/* CTA */}
         <a
-          href={wa(`Hello, I want to start on the SchoolPilot ${plan.name} plan — ${cycle === 'termly' ? 'GHS ' + price + ' per term' : 'GHS ' + price + ' per month'}. Please guide me.`)}
+          href={wa(`Hello, I want to start on the Schpilot ${plan.name} plan — ${cycle === 'termly' ? 'GHS ' + price + ' per term' : 'GHS ' + price + ' per month'}. Please guide me.`)}
           target="_blank" rel="noreferrer"
           style={{
             display: 'block', textAlign: 'center',
@@ -264,7 +264,7 @@ export default function Pricing() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Link to={backTo} style={{ color: 'rgba(255,255,255,.6)', fontSize: '.82rem', textDecoration: 'none' }}>{backLabel}</Link>
           <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,.2)' }} />
-          <span style={{ color: '#fff', fontWeight: 800, fontSize: '.95rem' }}>🏫 SchoolPilot</span>
+          <span style={{ color: '#fff', fontWeight: 800, fontSize: '.95rem' }}>🏫 Schpilot</span>
         </div>
         {!user && (
           <Link to="/trial" style={{
@@ -299,7 +299,7 @@ export default function Pricing() {
             borderRadius: 12, padding: '14px 20px', marginBottom: 24,
             fontSize: '.85rem', color: '#ff8a9b', lineHeight: 1.6,
           }}>
-            📢 Schools using SchoolPilot printed their Term 3 report cards in under 2 hours on speech day —
+            📢 Schools using Schpilot printed their Term 3 report cards in under 2 hours on speech day —
             while other schools were still calculating grades by hand.
           </div>
 
@@ -345,7 +345,7 @@ export default function Pricing() {
             The hidden cost of doing it manually
           </div>
           <h2 style={{ fontSize: '1.3rem', color: '#1a1a2e', margin: 0 }}>
-            What your school loses every term without SchoolPilot
+            What your school loses every term without Schpilot
           </h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -396,8 +396,8 @@ export default function Pricing() {
         </div>
         <div style={{ display: 'inline-flex', background: '#fff', borderRadius: 50, padding: 4, boxShadow: '0 2px 12px rgba(0,0,0,.08)', border: '1.5px solid #e8ecf0' }}>
           {[
-            { id: 'monthly', label: 'Monthly',   sub: 'Pay every month'          },
-            { id: 'termly',  label: 'Per Term',  sub: '💰 Save every term'       },
+            { id: 'termly',  label: 'Per Term',  sub: '💰 Pay once per term'    },
+            { id: 'monthly', label: 'Monthly',   sub: 'Pay every month instead' },
           ].map(opt => (
             <button key={opt.id} onClick={() => setCycle(opt.id)} style={{
               padding: '10px 28px', borderRadius: 46, border: 'none',
@@ -415,9 +415,12 @@ export default function Pricing() {
         {/* TECHNIQUE 5: CHARM PRICE reminder */}
         {cycle === 'termly' && (
           <div style={{ marginTop: 12, fontSize: '.82rem', color: '#27AE60', fontWeight: 700 }}>
-            🎉 Pay once per term — same as how your school already budgets for everything else
+            Pay once per academic term — no automatic renewal.
           </div>
         )}
+        <div style={{ marginTop: 6, fontSize: '.74rem', color: '#888' }}>
+          🔒 Your school records remain safe even after your subscription expires.
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════
@@ -456,6 +459,39 @@ export default function Pricing() {
             <PlanCard plan={PLANS.premium} cycle={cycle} isDecoy={false} />
             <div style={{ textAlign: 'center', marginTop: 10, fontSize: '.72rem', color: '#888' }}>
               For schools that want everything
+            </div>
+          </div>
+
+          {/* CONTACT US — schools above the Premium cap need a real
+              conversation about pricing, not a self-serve checkout */}
+          <div style={{ flex: '0 1 260px' }}>
+            <div style={{
+              background: '#fff', border: '2px dashed #d0d0d0', borderRadius: 20,
+              padding: '28px 22px', height: '100%', display: 'flex',
+              flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+              textAlign: 'center', minHeight: 320,
+            }}>
+              <div style={{ fontSize: '1.6rem', marginBottom: 10 }}>🏫</div>
+              <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#0F3460', marginBottom: 6 }}>
+                1,000+ Students
+              </div>
+              <div style={{ fontSize: '.82rem', color: '#666', marginBottom: 18, lineHeight: 1.5 }}>
+                Larger institutions get a plan built around their exact size and needs.
+              </div>
+              <a
+                href="https://wa.me/233549548274?text=Hello, our school has over 1,000 students — I'd like to talk about a custom plan."
+                target="_blank" rel="noreferrer"
+                style={{
+                  display: 'block', width: '100%', textAlign: 'center', padding: '13px',
+                  borderRadius: 12, border: '2px solid #0F3460', color: '#0F3460',
+                  fontWeight: 800, fontSize: '.9rem', textDecoration: 'none',
+                }}
+              >
+                Contact Us →
+              </a>
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 10, fontSize: '.72rem', color: '#888' }}>
+              Custom pricing, talk to us
             </div>
           </div>
         </div>
@@ -533,7 +569,7 @@ export default function Pricing() {
               Start My Free Trial →
             </Link>
             <a
-              href={wa('Hello, I would like to know more about SchoolPilot before subscribing.')}
+              href={wa('Hello, I would like to know more about Schpilot before subscribing.')}
               target="_blank" rel="noreferrer"
               style={{
                 background: 'rgba(255,255,255,.1)',
@@ -571,19 +607,19 @@ export default function Pricing() {
             },
             {
               q: 'GHS 150 feels expensive for a small school.',
-              a: 'Your school already spends more than GHS 150 on paper and ink for report cards alone. Use the calculator above to see your actual cost. For most schools, SchoolPilot is not an extra expense — it replaces what you already spend, and gives back hours of teacher time on top.',
+              a: 'Your school already spends more than GHS 150 on paper and ink for report cards alone. Use the calculator above to see your actual cost. For most schools, Schpilot is not an extra expense — it replaces what you already spend, and gives back hours of teacher time on top.',
             },
             {
               q: 'What if the internet goes off?',
-              a: 'SchoolPilot works completely offline. Enter scores, view students, do everything — with or without internet. When you get signal, even on mobile data for 5 minutes, everything syncs automatically.',
+              a: 'Schpilot works completely offline. Enter scores, view students, do everything — with or without internet. When you get signal, even on mobile data for 5 minutes, everything syncs automatically.',
             },
             {
-              q: 'Is our data safe? What if SchoolPilot closes down?',
+              q: 'Is our data safe? What if Schpilot closes down?',
               a: 'All data is backed up in Google Firebase — the same platform used by companies like Duolingo and Canva. You can export your complete school data as an Excel or JSON file any time you want — so your data is always yours, regardless of what happens to us.',
             },
             {
               q: 'We tried software before and it was too complicated.',
-              a: 'SchoolPilot was built specifically for Ghanaian schools — not adapted from a Western system. Every teacher who has used it entered their first scores within 10 minutes. The training videos walk through every single step. And if you get stuck, WhatsApp us — a real person responds, not a bot.',
+              a: 'Schpilot was built specifically for Ghanaian schools — not adapted from a Western system. Every teacher who has used it entered their first scores within 10 minutes. The training videos walk through every single step. And if you get stuck, WhatsApp us — a real person responds, not a bot.',
             },
           ].map((item, i) => (
             <details key={i} style={{
@@ -612,7 +648,7 @@ export default function Pricing() {
 
       {/* ── FOOTER ── */}
       <div style={{ textAlign: 'center', padding: '48px 24px 40px', color: '#aaa', fontSize: '.8rem' }}>
-        <div style={{ marginBottom: 8, fontWeight: 700, color: '#666' }}>SchoolPilot — Built for Ghana's Schools</div>
+        <div style={{ marginBottom: 8, fontWeight: 700, color: '#666' }}>Schpilot — Built for Ghana's Schools</div>
         <div>📱 WhatsApp: 0549548274 &nbsp;·&nbsp; ✉ schoolpilot132@gmail.com</div>
         <div style={{ marginTop: 16, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
           {!user && <Link to="/login"    style={{ color: '#aaa', textDecoration: 'none' }}>Sign In</Link>}

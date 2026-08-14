@@ -43,7 +43,7 @@ export default function SubscriptionExpired() {
   const isSuspended  = status === 'suspended';
   const isTrialEnded = status === 'trial_ended';
 
-  const waLink  = `https://wa.me/${SUPPORT_PHONE_INTL}?text=${encodeURIComponent(`Hello, I'd like to subscribe to SchoolMS — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`;
+  const waLink  = `https://wa.me/${SUPPORT_PHONE_INTL}?text=${encodeURIComponent(`Hello, I'd like to subscribe to Schpilot — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`;
   const telLink = `tel:+${SUPPORT_PHONE_INTL}`;
 
   const milestoneLabel = isTrialEnded
@@ -74,7 +74,7 @@ export default function SubscriptionExpired() {
         {isTrialEnded && (
           <>
             <p style={{ color: 'var(--text-mid)', marginBottom: 18, lineHeight: 1.7, fontSize: '.88rem' }}>
-              {milestoneLabel} — that's exactly what SchoolMS is built for, and you got
+              {milestoneLabel} — that's exactly what Schpilot is built for, and you got
               to try the real thing, not a watered-down demo.
             </p>
 
@@ -147,7 +147,7 @@ export default function SubscriptionExpired() {
             </div>
             {cycle === 'termly' && (
               <div style={{ textAlign: 'center', fontSize: '.76rem', color: 'var(--success)', fontWeight: 600, marginBottom: 12 }}>
-                💰 Pay once per term — the 3 months of your term combined into one payment, with a small saving built in
+                💰 Pay once per academic term — no automatic renewal.
               </div>
             )}
             {cycle === 'monthly' && (
@@ -155,6 +155,9 @@ export default function SubscriptionExpired() {
                 Optional — pay every 30 days instead. Switch to termly any time to save.
               </div>
             )}
+            <div style={{ textAlign: 'center', fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 12 }}>
+              🔒 Your school records remain safe even after your subscription expires.
+            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {['starter', 'pro', 'premium'].map(planId => {

@@ -482,7 +482,7 @@ export default function Students() {
       if (rows.length === 0) {
         alert(
           'No students found in the file.\n\n' +
-          'Make sure you are using the SchoolPilot template and that:\n' +
+          'Make sure you are using the Schpilot template and that:\n' +
           '• First Name and Last Name columns are filled in\n' +
           '• The file is saved as .xlsx (not .csv)\n' +
           '• You deleted or replaced the example rows before saving\n\n' +

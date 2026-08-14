@@ -47,7 +47,7 @@ export default function RequestAccess() {
     return (
       <div className="auth-page">
         <div className="auth-left">
-          <h1>SchoolMS</h1>
+          <h1>Schpilot</h1>
           <p>Professional school management for Ghana.</p>
         </div>
         <div className="auth-right" style={{ textAlign: 'center' }}>
@@ -90,7 +90,7 @@ export default function RequestAccess() {
   return (
     <div className="auth-page">
       <div className="auth-left">
-        <h1>SchoolMS</h1>
+        <h1>Schpilot</h1>
         <p>Professional school management system built for Ghana.</p>
 
         <div style={{ marginTop: 36 }}>

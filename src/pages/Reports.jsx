@@ -233,7 +233,7 @@ export default function Reports() {
 
       {watermark && (
         <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: '.83rem' }}>
-          ⚠ PDFs will include a watermark on your current plan. Upgrade to Pro or Premium for clean reports.
+          ℹ A subtle "Powered by Schpilot" footer appears on your PDFs on this plan. Upgrade to Pro or Premium for a completely clean report.
         </div>
       )}
 

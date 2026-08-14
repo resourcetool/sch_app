@@ -78,7 +78,7 @@ function AccountDeletionPanel({ school, schoolId, subscription }) {
           <strong>Changed your mind?</strong> You can cancel this request before the deletion date by contacting us on WhatsApp: 0549548274
         </div>
         <a
-          href="https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolPilot data deletion request."
+          href="https://wa.me/233549548274?text=Hello, I'd like to cancel my Schpilot data deletion request."
           target="_blank" rel="noreferrer"
           className="btn btn-ghost btn-sm"
           style={{ textDecoration: 'none' }}
@@ -317,7 +317,7 @@ function SubscriptionTab({ subscription }) {
 
         <div style={{ marginTop: 16, textAlign: 'center' }}>
           <a
-            href={`https://wa.me/233549548274?text=${encodeURIComponent(`Hello, I'd like to renew/change my SchoolPilot plan — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`}
+            href={`https://wa.me/233549548274?text=${encodeURIComponent(`Hello, I'd like to renew/change my Schpilot plan — paying ${cycle === 'termly' ? 'per term' : 'monthly'}.`)}`}
             target="_blank" rel="noreferrer"
             className="btn btn-success"
             style={{ textDecoration: 'none' }}

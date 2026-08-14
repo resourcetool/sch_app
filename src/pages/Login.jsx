@@ -132,10 +132,10 @@ function DemoModal({ onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ color: '#fff', fontWeight: 800, fontSize: '1.1rem' }}>
-              🎬 SchoolMS — How It Works
+              🎬 Schpilot — How It Works
             </div>
             <div style={{ color: '#90A4AE', fontSize: '.8rem', marginTop: 2 }}>
-              Watch this short demo to see exactly how SchoolMS works for your school
+              Watch this short demo to see exactly how Schpilot works for your school
             </div>
           </div>
           <button
@@ -172,7 +172,7 @@ function DemoModal({ onClose }) {
           ) : (
             <iframe
               src={DEMO_VIDEO_URL}
-              title="SchoolMS Training Video"
+              title="Schpilot Training Video"
               style={{ width: '100%', height: '100%', border: 'none' }}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
@@ -444,7 +444,7 @@ export default function Login() {
             padding: '8px 16px', marginBottom: 24,
           }}>
             <span style={{ fontSize: '1.3rem' }}>🏫</span>
-            <span style={{ fontSize: '.85rem', fontWeight: 700, letterSpacing: '.04em' }}>SchoolMS Ghana</span>
+            <span style={{ fontSize: '.85rem', fontWeight: 700, letterSpacing: '.04em' }}>Schpilot Ghana</span>
           </div>
 
           <h1>Manage Your School Records Professionally</h1>
@@ -554,12 +554,12 @@ export default function Login() {
               📖 User Guide
             </div>
             <div style={{ fontSize: '.82rem', opacity: .8, marginBottom: 12, lineHeight: 1.55 }}>
-              Download the full SchoolMS usage manual — covers every feature with step-by-step instructions.
+              Download the full Schpilot usage manual — covers every feature with step-by-step instructions.
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <a
-                href="/SchoolMS_Full_Manual.pdf"
-                download="SchoolMS_Usage_Manual.pdf"
+                href="/Schpilot_Full_Manual.pdf"
+                download="Schpilot_Usage_Manual.pdf"
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   background: 'rgba(255,255,255,.15)',
@@ -572,8 +572,8 @@ export default function Login() {
                 <span>📄</span> Download PDF
               </a>
               <a
-                href="/SchoolMS_Full_Manual.docx"
-                download="SchoolMS_Usage_Manual.docx"
+                href="/Schpilot_Full_Manual.docx"
+                download="Schpilot_Usage_Manual.docx"
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   background: 'rgba(255,255,255,.08)',
@@ -773,16 +773,16 @@ export default function Login() {
               }}>
                 <span style={{ fontSize: '.75rem', color: 'var(--text-lt)' }}>📖 User Guide:</span>
                 <a
-                  href="/SchoolMS_Full_Manual.pdf"
-                  download="SchoolMS_Usage_Manual.pdf"
+                  href="/Schpilot_Full_Manual.pdf"
+                  download="Schpilot_Usage_Manual.pdf"
                   style={{ fontSize: '.75rem', color: 'var(--navy)', fontWeight: 700, textDecoration: 'none' }}
                 >
                   ⬇ PDF
                 </a>
                 <span style={{ color: '#ddd', fontSize: '.7rem' }}>|</span>
                 <a
-                  href="/SchoolMS_Full_Manual.docx"
-                  download="SchoolMS_Usage_Manual.docx"
+                  href="/Schpilot_Full_Manual.docx"
+                  download="Schpilot_Usage_Manual.docx"
                   style={{ fontSize: '.75rem', color: 'var(--navy)', fontWeight: 700, textDecoration: 'none' }}
                 >
                   ⬇ Word

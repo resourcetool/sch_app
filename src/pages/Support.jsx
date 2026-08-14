@@ -425,8 +425,8 @@ export default function Support() {
   const [activeFlow, setActiveFlow] = useState(null);
   const [showContact, setShowContact] = useState(false);
 
-  const waLink    = `https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I need help with SchoolMS.`;
-  const mailtoLink = `mailto:${SUPPORT_EMAIL}?subject=SchoolMS Support Request&body=Hi, I need help with...`;
+  const waLink    = `https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I need help with Schpilot.`;
+  const mailtoLink = `mailto:${SUPPORT_EMAIL}?subject=Schpilot Support Request&body=Hi, I need help with...`;
 
   return (
     <div>

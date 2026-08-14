@@ -2,7 +2,7 @@
 //
 // Interactive Training Centre — accessible from the login page without
 // signing in. Shows categorised short training videos so new schools
-// know exactly how to use SchoolMS before they even sign up.
+// know exactly how to use Schpilot before they even sign up.
 //
 // ─────────────────────────────────────────────────────────────────
 // HOW TO ADD YOUR VIDEOS:
@@ -523,7 +523,7 @@ export default function Training() {
             </Link>
             <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,.2)' }} />
             <span style={{ fontSize: '1rem' }}>🏫</span>
-            <span style={{ fontWeight: 800, fontSize: '.95rem' }}>SchoolMS Training Centre</span>
+            <span style={{ fontWeight: 800, fontSize: '.95rem' }}>Schpilot Training Centre</span>
           </div>
           <Link
             to="/trial"
@@ -546,7 +546,7 @@ export default function Training() {
           <div style={{ maxWidth: 600, margin: '0 auto' }}>
             <div style={{ fontSize: '2.2rem', marginBottom: 10 }}>🎓</div>
             <h1 style={{ fontSize: 'clamp(1.4rem, 4vw, 1.9rem)', fontWeight: 900, margin: '0 0 10px' }}>
-              Learn SchoolMS in Under 30 Minutes
+              Learn Schpilot in Under 30 Minutes
             </h1>
             <p style={{ opacity: .8, fontSize: '.9rem', lineHeight: 1.7, margin: '0 0 24px' }}>
               Short, practical videos covering every part of the system.

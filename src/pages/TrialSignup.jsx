@@ -286,12 +286,12 @@ export default function TrialSignup() {
           <div style={{ background: '#fff3e0', borderRadius: 12, padding: '14px 18px', marginBottom: 24, textAlign: 'left' }}>
             <div style={{ fontWeight: 700, color: '#e65100', marginBottom: 4, fontSize: '.85rem' }}>Why manual review?</div>
             <div style={{ fontSize: '.8rem', color: '#bf6000', lineHeight: 1.6 }}>
-              We verify each trial request to ensure SchoolPilot is being used by real schools.
+              We verify each trial request to ensure Schpilot is being used by real schools.
               This protects the integrity of the platform for all subscribing schools.
             </div>
           </div>
           <a
-            href="https://wa.me/233549548274?text=Hello, I just submitted a trial request for SchoolPilot for my school."
+            href="https://wa.me/233549548274?text=Hello, I just submitted a trial request for Schpilot for my school."
             target="_blank" rel="noreferrer"
             className="btn btn-primary btn-lg"
             style={{ display: 'block', textDecoration: 'none', marginBottom: 10 }}
@@ -314,7 +314,7 @@ export default function TrialSignup() {
           <span style={{ fontSize: '1.3rem' }}>🎁</span>
           <span style={{ fontSize: '.85rem', fontWeight: 700 }}>Free Trial</span>
         </div>
-        <h1>Try SchoolPilot Free</h1>
+        <h1>Try Schpilot Free</h1>
         <p style={{ marginTop: 12, opacity: .9 }}>Set up your school and experience the full system — not a watered-down demo.</p>
 
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
