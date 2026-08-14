@@ -46,7 +46,7 @@ export default function ExpiryNotification() {
     ? `Your free trial ends ${dayLabel}.`
     : `Your ${plan?.name || ''} subscription expires ${dayLabel}.`;
 
-  const waLink = `https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I'd like to ${isTrial ? 'subscribe to' : 'renew my'} SchoolMS plan.`;
+  const waLink = `https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I'd like to ${isTrial ? 'subscribe to' : 'renew my'} Schpilot plan.`;
 
   // Dismiss key is per-day so it re-shows the next day if not acted on
   const dismissKey = `expiry_dismissed_${subscription?.id}_${days}`;
@@ -77,7 +77,7 @@ export default function ExpiryNotification() {
           </div>
           <div style={{ fontSize: '.8rem', color: '#555', lineHeight: 1.5 }}>
             {isTrial
-              ? 'To continue using SchoolMS after your trial, choose a subscription plan. Your data is always safe — nothing is deleted if you don\'t subscribe.'
+              ? 'To continue using Schpilot after your trial, choose a subscription plan. Your data is always safe — nothing is deleted if you don\'t subscribe.'
               : 'Renew now to avoid read-only mode. Your data is always safe — it is never deleted due to non-payment.'
             }
           </div>

@@ -46,7 +46,7 @@ export default function TrialBanner() {
         </div>
       </div>
       <a
-        href="https://wa.me/233549548274?text=Hello, I'd like to learn more about subscribing to SchoolMS."
+        href="https://wa.me/233549548274?text=Hello, I'd like to learn more about subscribing to Schpilot."
         target="_blank" rel="noreferrer"
         style={{
           background: '#25D366', color: '#fff', padding: '7px 14px', borderRadius: 8,
