@@ -277,6 +277,54 @@ export async function checkTrialEligibility(email, phone) {
   return { eligible: true };
 }
 
+// ── FIX ORPHANED SCHOOL ────────────────────────────────────────────
+// For a school that exists (Auth account + schools doc + users doc all
+// present) but has NO subscription document at all — the "NONE / NO SUB"
+// case in the SuperAdmin schools table. This happens when startFreeTrial()
+// failed partway through signup (e.g. before the Firestore rules fix, or
+// any other transient failure) and the rollback didn't fully clean up.
+// Rather than making the school sign up again from scratch, this creates
+// the missing pending trial doc directly — same shape startFreeTrial()
+// would have created, using the school's own recorded email/phone. It
+// then appears in the normal Requests tab for approval, same as any
+// other trial signup.
+export async function fixOrphanedSchool(schoolId) {
+  const schoolSnap = await getDoc(doc(db, 'schools', schoolId));
+  if (!schoolSnap.exists()) throw new Error('School record not found — nothing to fix.');
+  const school = schoolSnap.data();
+
+  const existingSub = await getDoc(doc(db, 'subscriptions', schoolId));
+  if (existingSub.exists()) {
+    throw new Error('This school already has a subscription record — nothing to fix.');
+  }
+
+  const now = Date.now();
+  const subscription = {
+    id:           schoolId,
+    schoolId,
+    schoolName:   school.name || 'Unknown School',
+    plan:         'trial',
+    status:       'pending_approval',
+    backupAddon:  false,
+    requestedAt:  now,
+    activatedAt:  null,
+    expiresAt:    null,
+    adminEmail:   school.email || '',
+    trialEmail:   (school.email || '').trim().toLowerCase(),
+    trialPhone:   (school.phone || '').replace(/\D/g, ''),
+    isTrial:      true,
+    paymentHistory: [],
+    declaredTermEndDate: null,
+    // Audit trail — distinguishes a manually-repaired record from a
+    // normal signup, in case this needs investigating later.
+    fixedFromOrphan: true,
+    fixedAt:         now,
+  };
+
+  await setDoc(doc(db, 'subscriptions', schoolId), subscription);
+  return subscription;
+}
+
 export async function startFreeTrial(schoolId, schoolName, adminEmail, adminPhone, declaredTermEndDate = null) {
   const eligibility = await checkTrialEligibility(adminEmail, adminPhone);
   if (!eligibility.eligible) {
