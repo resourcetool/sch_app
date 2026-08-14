@@ -15,7 +15,10 @@ import {
   collection, doc, getDoc, getDocs, setDoc,
   updateDoc, deleteDoc, query, orderBy, serverTimestamp, where, writeBatch
 } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut as secondarySignOut } from 'firebase/auth';
 import { db } from './firebase';
+import firebaseApp from './firebase';
 import { PLANS, BILLING_CYCLES, getPlanPrice, computeTermBasedExpiry } from './subscriptionService';
 
 // ── SUPER ADMIN CONFIG ────────────────────────────────────────────
@@ -275,6 +278,73 @@ export async function checkTrialEligibility(email, phone) {
     return { eligible: false, reason: 'A free trial has already been used with this phone number.' };
   }
   return { eligible: true };
+}
+
+// ── RESET SCHOOL ADMIN LOGIN ───────────────────────────────────────
+// Fixes a specific broken state: the school's Firestore records (schools,
+// users, subscription) all exist, but the underlying Firebase Auth account
+// no longer does — usually because an EARLIER failed signup's rollback
+// deleted the Auth account but left the Firestore docs behind (the old
+// bug fixed in TrialSignup.jsx's rollback logic). The person then sees
+// "Incorrect email or password" trying to log in, because there is
+// genuinely no Auth account with that email anymore — no password reset
+// email can fix this either, since there's nothing to reset.
+//
+// This creates a FRESH Auth account with the same email and a temporary
+// password super admin sets, then migrates the old `users` doc's role/
+// schoolId onto a new doc keyed by the new uid, and removes the old
+// dangling one.
+//
+// IMPORTANT: uses a SEPARATE, temporary Firebase app instance to create
+// the new Auth user. createUserWithEmailAndPassword() automatically signs
+// in as the newly created user on whichever auth instance it's called on
+// — calling it on the app's normal `auth` instance would sign super admin
+// OUT of their own session and into the school admin's account instead.
+export async function resetSchoolAdminLogin(schoolId, newPassword) {
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('Temporary password must be at least 6 characters.');
+  }
+
+  const usersQ = query(
+    collection(db, 'users'),
+    where('schoolId', '==', schoolId),
+    where('role', '==', 'admin'),
+  );
+  const usersSnap = await getDocs(usersQ);
+  if (usersSnap.empty) {
+    throw new Error('No admin user record found for this school — nothing to reset.');
+  }
+  const oldUserDoc = usersSnap.docs[0];
+  const oldProfile = oldUserDoc.data();
+  const email = oldProfile.email;
+  if (!email) {
+    throw new Error('This admin record has no email on file — cannot recreate their login.');
+  }
+
+  const secondaryApp = initializeApp(firebaseApp.options, `secondary-${Date.now()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  let newUid;
+  try {
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, newPassword);
+    newUid = cred.user.uid;
+    await secondarySignOut(secondaryAuth);
+  } catch (err) {
+    if (err.code === 'auth/email-already-in-use') {
+      throw new Error(
+        'An Auth account with this email already exists — this school may not actually be ' +
+        'broken the way this tool assumes. Have the admin try "Forgot Password" instead.'
+      );
+    }
+    throw err;
+  } finally {
+    await deleteApp(secondaryApp);
+  }
+
+  // Migrate the profile onto the new uid, then remove the old dangling doc
+  await setDoc(doc(db, 'users', newUid), { ...oldProfile, id: newUid });
+  await deleteDoc(doc(db, 'users', oldUserDoc.id));
+
+  return { email, newPassword };
 }
 
 // ── FIX ORPHANED SCHOOL ────────────────────────────────────────────
