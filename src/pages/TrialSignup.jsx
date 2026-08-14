@@ -80,6 +80,7 @@ export default function TrialSignup() {
 
     setLoading(true); setGlobalError('');
     let registeredUser = null;
+    let registeredSchoolId = null;
     let signupFullySucceeded = false;
     try {
       const phoneCheck = validateGhanaPhone(form.phone);
@@ -99,6 +100,7 @@ export default function TrialSignup() {
         currentTerm:  form.currentTerm,
       });
       registeredUser = user;
+      registeredSchoolId = school.id;
 
       // Step B: Send email verification while still signed in
       const currentUser = auth.currentUser;
@@ -148,17 +150,53 @@ export default function TrialSignup() {
       // fails there, we must not leave behind a fully working, logged-in
       // account with no subscription tracking it at all.
       if (!signupFullySucceeded && registeredUser && err.code !== 'auth/email-already-in-use') {
+        // BUG FIX: this rollback used to delete the 'users' doc and the Auth
+        // account, but NEVER the 'schools' doc — so a school could end up
+        // orphaned: no subscription (startFreeTrial failed), but the school
+        // record left behind forever. Worse, if EITHER of the first two
+        // deletes below also failed silently (they were caught and only
+        // console.warn'd), the person was left with a fully working login
+        // and a real school, just no subscription at all — which is
+        // exactly the "No Active Plan" / "doesn't appear in Requests"
+        // symptom. Also reordered: delete Firestore docs BEFORE the Auth
+        // account, not after — once the Auth account is gone, the person
+        // is signed out and loses the permissions needed to delete their
+        // own users/schools docs, so the original order could cause the
+        // LATER deletes in the sequence to fail even when rules were fine.
+        let cleanupFailed = false;
         try {
           await deleteDoc(doc(db, 'users', registeredUser.uid));
         } catch (cleanupErr) {
-          console.warn('[TrialSignup] Could not clean up user profile after failed signup:', cleanupErr.message);
+          cleanupFailed = true;
+          console.error('[TrialSignup] Could not clean up user profile after failed signup:', cleanupErr.message);
+        }
+        if (registeredSchoolId) {
+          try {
+            await deleteDoc(doc(db, 'schools', registeredSchoolId));
+          } catch (cleanupErr) {
+            cleanupFailed = true;
+            console.error('[TrialSignup] Could not clean up school record after failed signup:', cleanupErr.message);
+          }
         }
         try {
           if (auth.currentUser) await deleteUser(auth.currentUser);
         } catch (cleanupErr) {
-          console.warn('[TrialSignup] Could not delete Auth account after failed signup:', cleanupErr.message);
+          cleanupFailed = true;
+          console.error('[TrialSignup] Could not delete Auth account after failed signup:', cleanupErr.message);
         }
         try { await logout(); } catch { /* already signed out or never fully signed in */ }
+
+        if (cleanupFailed) {
+          // Rollback didn't fully succeed — leaving them in a broken
+          // half-created state would be worse than telling them plainly.
+          // Surface this distinctly so it's not confused with a normal
+          // "please try again" failure; a super admin needs to manually
+          // clean up school "${registeredSchoolId}".
+          console.error(
+            `[TrialSignup] INCOMPLETE ROLLBACK for school ${registeredSchoolId} / uid ${registeredUser.uid} — ` +
+            `manual cleanup by super admin required.`
+          );
+        }
       }
 
       if (err.code === 'auth/email-already-in-use') {
