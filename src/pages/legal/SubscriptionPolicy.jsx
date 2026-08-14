@@ -81,7 +81,7 @@ export default function SubscriptionPolicy() {
       </section>
       <section>
         <h2>Refunds</h2>
-        <p>We do not offer refunds for partial billing periods (monthly or termly) except in cases where SchoolMS was unavailable for more than 48 consecutive hours due to a fault on our side. Disputes: schoolpilot132@gmail.com</p>
+        <p>We do not offer refunds for partial billing periods (monthly or termly) except in cases where Schpilot was unavailable for more than 48 consecutive hours due to a fault on our side. Disputes: schoolpilot132@gmail.com</p>
       </section>
     </PolicyLayout>
   );

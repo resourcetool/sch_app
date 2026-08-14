@@ -4,7 +4,7 @@ export default function PrivacyPolicy() {
     <PolicyLayout title="Privacy Policy" lastUpdated="June 2025">
       <section>
         <h2>1. Who We Are</h2>
-        <p>SchoolMS is a school management software service operated by SchoolPilot (Ghana). Contact: schoolpilot132@gmail.com | 0549548274.</p>
+        <p>Schpilot is a school management software service operated by Schpilot (Ghana). Contact: schoolpilot132@gmail.com | 0549548274.</p>
       </section>
       <section>
         <h2>2. What Data We Collect</h2>
@@ -21,7 +21,7 @@ export default function PrivacyPolicy() {
       <section>
         <h2>3. How We Use Your Data</h2>
         <ul>
-          <li>To operate and provide the SchoolMS service</li>
+          <li>To operate and provide the Schpilot service</li>
           <li>To generate report cards and academic results</li>
           <li>To send service notifications (trial approval, subscription reminders)</li>
           <li>To audit and investigate disputes or fraud</li>
@@ -48,7 +48,7 @@ export default function PrivacyPolicy() {
       </section>
       <section>
         <h2>7. Children's Data</h2>
-        <p>SchoolMS processes student data on behalf of schools, who are the data controllers for their students. Schools are responsible for obtaining any necessary parental consent under applicable law. We process this data only at the school's direction.</p>
+        <p>Schpilot processes student data on behalf of schools, who are the data controllers for their students. Schools are responsible for obtaining any necessary parental consent under applicable law. We process this data only at the school's direction.</p>
       </section>
       <section>
         <h2>8. Contact</h2>

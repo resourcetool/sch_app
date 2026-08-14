@@ -4,17 +4,17 @@ export default function TermsOfService() {
     <PolicyLayout title="Terms of Service" lastUpdated="June 2025">
       <section>
         <h2>1. Acceptance of Terms</h2>
-        <p>By creating a SchoolMS account (including a free trial), you agree to these Terms of Service. If you do not agree, do not use SchoolMS.</p>
+        <p>By creating a Schpilot account (including a free trial), you agree to these Terms of Service. If you do not agree, do not use Schpilot.</p>
       </section>
       <section>
         <h2>2. The Service</h2>
-        <p>SchoolMS provides school management software including student records, assessment management, report card generation, and analytics. Features vary by subscription plan.</p>
+        <p>Schpilot provides school management software including student records, assessment management, report card generation, and analytics. Features vary by subscription plan.</p>
       </section>
       <section>
         <h2>3. Free Trial</h2>
         <ul>
           <li>Each school is entitled to one free trial per email address and phone number</li>
-          <li>The trial requires approval by SchoolMS administrators</li>
+          <li>The trial requires approval by Schpilot administrators</li>
           <li>The trial ends when you generate your first academic report, finalise a full class assessment, or after 21 days — whichever comes first</li>
           <li>After the trial, your account becomes read-only. Data is never deleted.</li>
           <li>We will never charge your Mobile Money automatically. You choose if and when to subscribe.</li>
@@ -26,7 +26,7 @@ export default function TermsOfService() {
           <li>Subscriptions are monthly, paid in advance via Mobile Money (Ghana)</li>
           <li>There is no automatic billing or stored payment method</li>
           <li>You send payment manually and we activate your plan manually after confirmation</li>
-          <li>No refunds for partial months except in cases of service outage caused by SchoolMS</li>
+          <li>No refunds for partial months except in cases of service outage caused by Schpilot</li>
         </ul>
       </section>
       <section>
@@ -42,7 +42,7 @@ export default function TermsOfService() {
       </section>
       <section>
         <h2>6. Data Ownership</h2>
-        <p>Your school's data belongs to your school. SchoolMS acts as a data processor on your behalf. We do not claim ownership of your student records, assessment data, or any other content you enter into the system.</p>
+        <p>Your school's data belongs to your school. Schpilot acts as a data processor on your behalf. We do not claim ownership of your student records, assessment data, or any other content you enter into the system.</p>
       </section>
       <section>
         <h2>7. Service Availability</h2>

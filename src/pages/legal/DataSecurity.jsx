@@ -15,7 +15,7 @@ export default function DataSecurity() {
       </section>
       <section>
         <h2>Database Security Rules</h2>
-        <p>SchoolMS uses Firestore Security Rules that enforce school-level data isolation at the database layer — not just the application layer. Even if someone obtained a valid Firebase token, they could not access another school's data.</p>
+        <p>Schpilot uses Firestore Security Rules that enforce school-level data isolation at the database layer — not just the application layer. Even if someone obtained a valid Firebase token, they could not access another school's data.</p>
         <p>Teacher accounts can only read and write data for their assigned classes and subjects — not other teachers' data.</p>
       </section>
       <section>
