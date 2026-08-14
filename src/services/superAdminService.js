@@ -71,23 +71,24 @@ function generateCode() {
 // ── EMAILJS NOTIFICATION ─────────────────────────────────────────
 
 /**
- * Sends an email notification to every super-admin address via EmailJS.
- * Failures are logged but do NOT throw — request saving must not be blocked.
+ * Sends an email notification to every super-admin address via EmailJS,
+ * notifying them of a new trial/access request.
  *
- * EmailJS template variables expected:
- *   {{to_email}}, {{school_name}}, {{admin_name}}, {{email}},
- *   {{phone}}, {{school_type}}, {{region}}, {{plan}}, {{submitted_at}}
+ * UNIFIED with sendSuperAdminEmail() below — both now send through the
+ * SAME template shape ({{to_email}}, {{to_name}}, {{from_name}},
+ * {{subject}}, {{message}}, {{reply_to}}) instead of two different
+ * variable schemas on two separate EmailJS template IDs. Previously this
+ * function used its own custom set of variables (school_name, admin_name,
+ * phone, etc.) on VITE_EMAILJS_TEMPLATE_ID, while sendSuperAdminEmail()
+ * used a completely different set on VITE_EMAILJS_TEMPLATE_ID_GENERAL —
+ * if that second env var/template was never separately created in the
+ * EmailJS dashboard, sendSuperAdminEmail() silently fell back to reusing
+ * the FIRST template with the WRONG variables, meaning trial-confirmation
+ * and approval emails would render blank or broken even though the send
+ * "succeeded" with no error. One template shape means one thing to set
+ * up correctly, and every email type in the app now uses it.
  */
 export async function sendAccessRequestNotification(requestData) {
-  const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
-  const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
-  const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
-
-  if (!serviceId || !templateId || !publicKey) {
-    console.warn('[EmailJS] Not configured — skipping access-request notification.');
-    return;
-  }
-
   const adminEmails = getSuperAdminEmails();
   if (adminEmails.length === 0) {
     console.warn('[EmailJS] No super-admin emails configured.');
@@ -104,48 +105,28 @@ export async function sendAccessRequestNotification(requestData) {
     premium: 'Premium — GHS 400/month',
   };
 
-  const templateParams = {
-    school_name:  requestData.schoolName  || '—',
-    admin_name:   requestData.adminName   || '—',
-    email:        requestData.email       || '—',
-    phone:        requestData.phone       || '—',
-    school_type:  requestData.schoolType  || '—',
-    region:       requestData.region      || '—',
-    plan:         planLabels[requestData.plan] || requestData.plan || '—',
-    student_count: requestData.studentCount || '—',
-    message:      requestData.message     || '—',
-    submitted_at: submittedAt,
-  };
+  const body =
+    `New request: ${requestData.schoolType || 'Access Request'}\n\n` +
+    `School: ${requestData.schoolName || '—'}\n` +
+    `Admin: ${requestData.adminName || '—'}\n` +
+    `Email: ${requestData.email || '—'}\n` +
+    `Phone: ${requestData.phone || '—'}\n` +
+    `Region: ${requestData.region || '—'}\n` +
+    `Plan requested: ${planLabels[requestData.plan] || requestData.plan || '—'}\n` +
+    `Students: ${requestData.studentCount || '—'}\n` +
+    `Submitted: ${submittedAt}\n\n` +
+    `${requestData.message || ''}\n\n` +
+    `Review and approve/reject in the SuperAdmin panel.`;
 
-  // Send to each super-admin email
-  const sends = adminEmails.map(async (toEmail) => {
-    try {
-      const response = await fetch(
-        `https://api.emailjs.com/api/v1.0/email/send`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            service_id:  serviceId,
-            template_id: templateId,
-            user_id:     publicKey,
-            template_params: { ...templateParams, to_email: toEmail },
-          }),
-        }
-      );
-      if (!response.ok) {
-        const text = await response.text();
-        console.error(`[EmailJS] Failed for ${toEmail}: ${response.status} — ${text}`);
-      } else {
-        console.log(`[EmailJS] Notification sent to ${toEmail}`);
-      }
-    } catch (err) {
-      console.error(`[EmailJS] Network error for ${toEmail}:`, err);
-    }
-  });
-
-  // Wait for all but don't let errors propagate
-  await Promise.allSettled(sends);
+  // Send to each super-admin address, through the same unified sender
+  // used everywhere else — failures are caught per-recipient so one
+  // bad address doesn't block notifying the others.
+  await Promise.allSettled(
+    adminEmails.map(toEmail =>
+      sendSuperAdminEmail(toEmail, `🎓 New Request: ${requestData.schoolName || 'Unknown School'}`, body, 'SchoolPilot')
+        .catch(err => console.warn(`[EmailJS] Notification to ${toEmail} failed:`, err.message))
+    )
+  );
 }
 
 // ── REGISTRATION CODES ────────────────────────────────────────────
@@ -963,8 +944,12 @@ export async function getSchoolActivityLog(schoolId, limitCount = 100) {
 }
 
 // ── SUPER ADMIN EMAIL (via EmailJS) ──────────────────────────────
-// Sends email to one recipient or broadcasts to all school admins.
-// Uses the same EmailJS config as the access-request notifications.
+// The SINGLE email-sending function for the whole app now — trial
+// confirmations, approval notices, access-request alerts to super admin,
+// and broadcasts all funnel through here with the same template shape.
+// Set up ONE EmailJS template with these variables and every email type
+// in the app works: {{to_email}}, {{to_name}}, {{from_name}},
+// {{subject}}, {{message}}, {{reply_to}}.
 export async function sendSuperAdminEmail(to, subject, body, fromName = 'SchoolPilot Admin') {
   const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
   const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID_GENERAL ||
