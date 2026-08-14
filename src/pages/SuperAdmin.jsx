@@ -18,7 +18,7 @@ import {
   createRegistrationCode, renewSubscription, suspendSchool,
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
   addSuperAdminNote, getSchoolDetails, getSchoolAdminProfiles, deleteAccessRequest,
-  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool, fixOrphanedSchool,
+  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool, fixOrphanedSchool, resetSchoolAdminLogin,
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
   sendSuperAdminEmail, broadcastEmailToAllSchools,
   getSchoolActivityLog, getPendingDeletions,
@@ -412,6 +412,7 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [resettingId, setResettingId] = useState(null);
   const [resetMsg,    setResetMsg]    = useState(null);
+  const [recreatingId, setRecreatingId] = useState(null);
   const [savingContacts, setSavingContacts] = useState(false);
   const [contactsError,  setContactsError]  = useState('');
   const sub = school.subscription;
@@ -443,6 +444,36 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
       setResetMsg({ type: 'danger', text: `Could not send reset link: ${err.message}` });
     } finally {
       setResettingId(null);
+    }
+  }
+
+  async function handleRecreateLogin(profile) {
+    if (!profile.email) return;
+    const tempPassword = window.prompt(
+      `This will DELETE their old broken login record and create a brand new one with a ` +
+      `temporary password. Only do this if "Reset Link" doesn't work.\n\n` +
+      `Set a temporary password for ${profile.email} (min 6 characters):`
+    );
+    if (!tempPassword) return;
+    if (!window.confirm(
+      `Confirm: create a new login for ${profile.email} with this temporary password, ` +
+      `and remove their old broken login record?`
+    )) return;
+
+    setRecreatingId(profile.id);
+    setResetMsg(null);
+    try {
+      await resetSchoolAdminLogin(school.id, tempPassword);
+      setResetMsg({
+        type: 'success',
+        text: `✓ New login created for ${profile.email}. Temporary password: "${tempPassword}" — ` +
+              `share this with them directly and ask them to change it after logging in.`,
+      });
+      onRefresh && onRefresh();
+    } catch (err) {
+      setResetMsg({ type: 'danger', text: `Could not recreate login: ${err.message}` });
+    } finally {
+      setRecreatingId(null);
     }
   }
 
@@ -637,15 +668,26 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                           {p.lastLoginAt ? new Date(p.lastLoginAt).toLocaleString() : 'Never'}
                         </td>
                         <td>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: '.7rem', padding: '2px 8px' }}
-                            disabled={!p.email || resettingId === p.id}
-                            onClick={() => handleSendPasswordReset(p)}
-                            title={p.email ? `Send a password reset link to ${p.email}` : 'No email on file'}
-                          >
-                            {resettingId === p.id ? '…' : '🔑 Reset Link'}
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: '.7rem', padding: '2px 8px' }}
+                              disabled={!p.email || resettingId === p.id}
+                              onClick={() => handleSendPasswordReset(p)}
+                              title={p.email ? `Send a password reset link to ${p.email}` : 'No email on file'}
+                            >
+                              {resettingId === p.id ? '…' : '🔑 Reset Link'}
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: '.7rem', padding: '2px 8px', color: '#e65100' }}
+                              disabled={!p.email || recreatingId === p.id}
+                              onClick={() => handleRecreateLogin(p)}
+                              title="Use this ONLY if Reset Link doesn't work and the admin says their email/password is being rejected — this means their Auth account itself was deleted (an old bug), not just a forgotten password."
+                            >
+                              {recreatingId === p.id ? '…' : '⚠ Recreate Login'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -658,8 +700,12 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
             )}
             <div style={{ fontSize: '.74rem', color: 'var(--text-lt)', marginTop: 8 }}>
               "Reset Link" sends a password-reset email to whatever address is on file — it works even
-              though super admin can't see or know anyone's password. It only helps if they still have
-              access to that inbox; if the email itself was mistyped at signup, they'll need to fix that
+              when the admin has forgotten their password, and is always the first thing to try.
+              "Recreate Login" is only for the rarer case where the admin's account was deleted
+              entirely (they get "incorrect email or password" no matter what they type, and Reset
+              Link fails too) — it builds them a brand new login from scratch. Either way, super admin
+              can't see or know anyone's password. Reset Link only helps if they still have access to
+              that inbox; if the email itself was mistyped at signup, they'll need to fix that
               themselves via Settings → Login &amp; Security once logged in, or you can correct the
               contact email below (this does <strong>not</strong> change their login credential, only
               what's displayed here and used for notifications).
