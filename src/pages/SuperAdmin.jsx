@@ -18,7 +18,7 @@ import {
   createRegistrationCode, renewSubscription, suspendSchool,
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
   addSuperAdminNote, getSchoolDetails, getSchoolAdminProfiles, deleteAccessRequest,
-  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool,
+  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool, fixOrphanedSchool,
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
   sendSuperAdminEmail, broadcastEmailToAllSchools,
   getSchoolActivityLog, getPendingDeletions,
@@ -2158,6 +2158,25 @@ function SchoolDataBrowser({ schools }) {
     }
   }
 
+  const [fixingOrphan, setFixingOrphan] = useState(null);
+  async function handleFixOrphan(school) {
+    if (!window.confirm(
+      `Create a pending trial request for "${school.name}"?\n\n` +
+      `This school has no subscription record — this will create one using their ` +
+      `saved email/phone, and it will appear in the Requests tab for you to approve, ` +
+      `same as a normal signup. They will NOT need to sign up again.`
+    )) return;
+    setFixingOrphan(school.id);
+    try {
+      await fixOrphanedSchool(school.id);
+      await load();
+    } catch (err) {
+      alert('Fix failed: ' + err.message);
+    } finally {
+      setFixingOrphan(null);
+    }
+  }
+
   async function handleDeleteSchool(school) {
     const first = window.confirm(
       `⚠ WARNING — Delete ENTIRE school?\n\n` +
@@ -3296,9 +3315,21 @@ export default function SuperAdmin() {
                               <td>{sub?.backupAddon ? <span className="badge badge-success">✓ Yes</span> : <span className="badge badge-neutral">No</span>}</td>
                               <td style={{ fontWeight: 700 }}>GHS {monthly || '—'}</td>
                               <td>
-                                <div style={{ display: 'flex', gap: 6 }}>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                   <button className="btn btn-ghost btn-sm" onClick={() => { setSelected(s); setModal('detail'); }}>View</button>
-                                  <button className="btn btn-success btn-sm" onClick={() => { setSelected(s); setModal('renew'); }}>Renew</button>
+                                  {sub ? (
+                                    <button className="btn btn-success btn-sm" onClick={() => { setSelected(s); setModal('renew'); }}>Renew</button>
+                                  ) : (
+                                    <button
+                                      className="btn btn-sm"
+                                      disabled={fixingOrphan === s.id}
+                                      onClick={() => handleFixOrphan(s)}
+                                      style={{ background: '#e65100', color: '#fff', fontWeight: 700 }}
+                                      title="This school has no subscription record — create a pending trial request for it without them signing up again"
+                                    >
+                                      {fixingOrphan === s.id ? 'Fixing…' : '🔧 Fix'}
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
