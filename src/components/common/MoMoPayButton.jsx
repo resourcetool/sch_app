@@ -1,11 +1,11 @@
 // src/components/common/MoMoPayButton.jsx
 //
 // Zero-cost payment collection button — no payment gateway, no % fees.
-// Copies the SchoolPilot MoMo number to the clipboard and opens the
+// Copies the Schpilot MoMo number to the clipboard and opens the
 // phone's dialer pre-filled with the right network's USSD code.
 //
 // IMPORTANT — replace the placeholder numbers below with your real
-// SchoolPilot MoMo numbers before shipping. If you use the same number
+// Schpilot MoMo numbers before shipping. If you use the same number
 // on all three networks (common — most people register one SIM across
 // MTN/Telecel/AirtelTigo interoperability), just use the same value
 // for all three.
@@ -25,7 +25,7 @@
 import React, { useState } from 'react';
 
 // ── CONFIG — update with real numbers ──────────────────────────────
-export const MOMO_NUMBER = '0549548274'; // TODO: replace with real SchoolPilot MoMo number
+export const MOMO_NUMBER = '0549548274'; // TODO: replace with real Schpilot MoMo number
 const WHATSAPP_BASE = 'https://wa.me/233549548274';
 
 const NETWORKS = [
@@ -41,7 +41,7 @@ function dialLink(ussd) {
   return `tel:${ussd.replace('#', '%23')}`;
 }
 
-export default function MoMoPayButton({ amount, planName = 'SchoolPilot', compact = false }) {
+export default function MoMoPayButton({ amount, planName = 'Schpilot', compact = false }) {
   const [network, setNetwork]   = useState(null);
   const [copied, setCopied]     = useState(false);
 
@@ -95,7 +95,7 @@ export default function MoMoPayButton({ amount, planName = 'SchoolPilot', compac
       {network && (
         <div style={{ background: '#f7f9fc', borderRadius: 10, padding: '14px 16px' }}>
           <ol style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: '.8rem', color: '#444', lineHeight: 1.9 }}>
-            <li>Copy the SchoolPilot MoMo number below</li>
+            <li>Copy the Schpilot MoMo number below</li>
             <li>Dial the code — choose <strong>Send Money</strong></li>
             <li>Paste the number, enter <strong>GHS {amount}</strong>, confirm with your PIN</li>
             <li>Send us the MoMo reference on WhatsApp so we can activate your account</li>

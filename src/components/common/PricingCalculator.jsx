@@ -163,7 +163,7 @@ export function ROICalculator() {
             <span style={{ fontWeight: 900, color: '#E94560', fontSize: '1rem' }}>GHS {totalWastedPerTerm.toLocaleString()}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.88rem', color: '#333' }}>
-            <span style={{ fontWeight: 700 }}>SchoolPilot Pro (per term)</span>
+            <span style={{ fontWeight: 700 }}>Schpilot Pro (per term)</span>
             <span style={{ fontWeight: 900, color: '#27AE60', fontSize: '1rem' }}>GHS {schoolmsProTermly.toLocaleString()}</span>
           </div>
           <div style={{ height: 1, background: '#e0e0e0' }} />
