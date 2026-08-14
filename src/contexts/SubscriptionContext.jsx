@@ -69,7 +69,7 @@ function PendingApprovalScreen({ subscription, onRefresh, logout }) {
             {checking ? '⏳ Checking…' : '↻ Check Approval Status'}
           </button>
           <a
-            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I submitted a SchoolPilot trial request for ${subscription?.schoolName || 'my school'} and am waiting for approval.`}
+            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, I submitted a Schpilot trial request for ${subscription?.schoolName || 'my school'} and am waiting for approval.`}
             target="_blank" rel="noreferrer"
             style={{
               display: 'block', background: '#25D366', color: '#fff',
@@ -112,7 +112,7 @@ function DeletionRequestedScreen({ subscription, logout }) {
             All your data is still safely preserved during this period.
           </div>
         </div>
-        <a href={`https://wa.me/233549548274?text=Hello, I'd like to cancel my SchoolPilot data deletion request.`}
+        <a href={`https://wa.me/233549548274?text=Hello, I'd like to cancel my Schpilot data deletion request.`}
           target="_blank" rel="noreferrer"
           style={{ display: 'block', background: '#25D366', color: '#fff', padding: '12px 20px', borderRadius: 10, fontWeight: 700, textDecoration: 'none', fontSize: '.9rem', marginBottom: 10 }}>
           📱 Cancel Deletion — WhatsApp 0549548274
@@ -155,7 +155,7 @@ function NoSubscriptionScreen({ logout }) {
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <a
-            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my SchoolPilot account has no plan attached — please help me set it up.`}
+            href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my Schpilot account has no plan attached — please help me set it up.`}
             target="_blank" rel="noreferrer"
             style={{
               display: 'block', background: '#25D366', color: '#fff',
@@ -202,7 +202,7 @@ function RejectedScreen({ subscription, logout }) {
           official details and we'll review it again.
         </p>
         <a
-          href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my SchoolPilot trial request was rejected. I'd like to appeal.`}
+          href={`https://wa.me/${SUPPORT_PHONE_INTL}?text=Hello, my Schpilot trial request was rejected. I'd like to appeal.`}
           target="_blank" rel="noreferrer"
           style={{
             display: 'block', background: '#25D366', color: '#fff',
