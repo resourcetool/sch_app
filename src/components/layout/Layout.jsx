@@ -104,7 +104,7 @@ export default function Layout() {
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <h2>{school?.name || 'SchoolMS'}</h2>
+              <h2>{school?.name || 'Schpilot'}</h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
                 <span style={{ color: 'rgba(255,255,255,.45)', fontSize: '.72rem' }}>
                   {school?.code || ''} · {userProfile?.role}
