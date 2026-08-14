@@ -19,14 +19,14 @@ import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firest
 
 // ── PLAN DEFINITIONS ──────────────────────────────────────────────
 // ── BILLING CYCLES ──────────────────────────────────────────────
-// Schools can pay monthly OR termly (once per school term — 3x/year).
-// Termly is a small saving AND more practical for Ghanaian schools
-// that operate on a term budget rather than a monthly salary cycle.
-//
-// Monthly:  pay every 30 days
-// Termly:   pay once per term (~90 days = 3 months)
-//           priced at 2.5 months instead of 3 → small saving built in
-//           so termly feels like a reward, not a trap
+// SIMPLIFIED: termly is now the ONLY cycle actively sold — "pay once
+// per academic term, no automatic renewal" is the whole pricing story.
+// Monthly and annual stay defined here (not deleted) purely so any
+// EXISTING subscription already on one of those cycles keeps working
+// and renewing correctly — new signups and the Pricing page only ever
+// show termly. Don't remove monthly/annual entries; just don't surface
+// them as options going forward.
+export const ACTIVELY_SOLD_CYCLE = 'termly';
 
 export const BILLING_CYCLES = {
   monthly: {
@@ -89,67 +89,75 @@ export const PLANS = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    price: 150,           // GHS per month
-    termlyPrice: 375,     // GHS per term (2.5 × 150) — saves GHS 75 vs 3 months
+    price: 150,           // GHS per month (internal reference — termly is the only cycle shown/sold)
+    termlyPrice: 375,     // GHS per term — the headline, listed price
     maxStudents: 200,
     durationDays: 30,
     features: {
-      backup: false,
+      backup: false,        // no AUTOMATIC cloud backup
+      manualBackup: true,   // manual backup/export IS included — every plan gets this
       analytics: false,
       promotion: true,
-      watermark: false,
+      watermark: true,      // subtle "Powered by Schpilot" footer on report PDFs
       multiAdmin: false,
       prioritySupport: false,
     },
     color: '#2980b9',
     badge: 'Starter',
-    tagline: 'Perfect for small schools',
+    tagline: 'Get your results done.',
     highlight: false,
     bestFor: 'Schools with up to 200 students',
   },
   pro: {
     id: 'pro',
     name: 'Pro',
-    price: 250,           // GHS per month
-    termlyPrice: 625,     // GHS per term (2.5 × 250) — saves GHS 125 vs 3 months
-    maxStudents: 99999,
+    price: 250,
+    termlyPrice: 625,
+    maxStudents: 500,
     durationDays: 30,
     features: {
-      backup: false,
+      backup: false,        // automatic backup is an optional add-on at Pro; included from Premium up
+      manualBackup: true,
       analytics: true,
       promotion: true,
-      watermark: false,
+      watermark: false,     // no watermark from Pro up
       multiAdmin: false,
       prioritySupport: false,
     },
     color: '#0f3460',
     badge: 'Pro',
-    tagline: 'Most popular choice',
-    highlight: true,      // shown as recommended
-    bestFor: 'Growing schools that want full analytics',
+    tagline: 'Control the entire assessment process.',
+    highlight: true,      // shown as recommended — "Most Popular"
+    bestFor: 'Schools with up to 500 students that want full control and analytics',
   },
   premium: {
     id: 'premium',
     name: 'Premium',
-    price: 400,           // GHS per month
+    price: 400,
     termlyPrice: 1000,    // GHS per term (2.5 × 400) — saves GHS 200 vs 3 months
-    maxStudents: 99999,
+    maxStudents: 1000,
     durationDays: 30,
     features: {
-      backup: true,
+      backup: true,          // automatic cloud backup included
+      manualBackup: true,
       analytics: true,
       promotion: true,
-      watermark: false,
+      watermark: false,      // Premium can also set fully custom branding — see reportStyle.customBranding
       multiAdmin: true,
       prioritySupport: true,
     },
     color: '#e94560',
     badge: 'Premium',
-    tagline: 'Everything included',
+    tagline: 'Run assessment across the whole school.',
     highlight: false,
-    bestFor: 'Schools that want zero worries',
+    bestFor: 'Schools with up to 1,000 students that want everything handled',
   },
 };
+
+// Schools above 1,000 students don't fit a fixed tier — shown as a
+// "Contact Us" card in the pricing UI rather than a real PLANS entry,
+// since pricing for that size is negotiated directly, not self-serve.
+export const CONTACT_US_THRESHOLD = 1000;
 
 export const BACKUP_ADDON_PRICE         = 100;  // GHS/month
 export const BACKUP_ADDON_TERMLY_PRICE  = 250;  // GHS/term (2.5 × 100) — saves GHS 50 vs 3 months
@@ -160,50 +168,65 @@ export const BACKUP_ADDON_TERMLY_PRICE  = 250;  // GHS/term (2.5 × 100) — sav
 // so the choice is informed rather than a guess. Kept in one place so
 // the renewal screen, the expired-subscription screen, and super admin's
 // renewal tool all describe plans identically.
+// IMPORTANT — honesty over sales copy: only list a feature here once it
+// actually exists in the app. Items marked "(coming soon)" are on the
+// roadmap for that tier but not yet built — they are shown transparently
+// rather than silently promised, because charging for a feature that
+// doesn't work yet is the fastest way to lose trust with a school that
+// just paid. Move an item out of "(coming soon)" the day it ships.
 export const PLAN_FEATURE_LIST = {
   starter: [
     'Up to 200 students',
-    'Unlimited classes & subjects',
-    'Score entry for teachers',
-    'PDF report cards (SchoolPilot watermark shown)',
+    'Classes & subjects',
+    'Teacher score entry',
+    'Automatic calculations, positions & aggregates',
+    'PDF report cards (subtle "Powered by Schpilot" footer)',
     'Promotion engine (end-of-year promotion wizard)',
     'Works fully offline',
+    'Manual backup/export',
     '✗ No performance analytics/charts',
-    '✗ No data backup & restore tools',
+    '✗ No automatic cloud backup',
   ],
   pro: [
-    'Unlimited students',
-    'Unlimited classes & subjects',
-    'Score entry for teachers',
+    'Up to 500 students',
+    'Everything in Starter, plus:',
     'Clean PDF report cards — no watermark',
-    'Promotion engine (end-of-year promotion wizard)',
-    'Works fully offline',
-    '✓ Performance analytics — class trends, subject comparison, student progress',
-    '✗ No data backup & restore tools (can be added separately)',
+    'Manual backup/export',
+    '✓ Performance analytics — class/subject trends, student progress',
+    '⏳ Assessment approval workflow (coming soon)',
+    '⏳ Live assessment completion dashboard (coming soon)',
+    '⏳ Parent result portal (coming soon)',
+    '⏳ Bulk import/export — Excel/CSV (coming soon)',
+    '⏳ Advanced reports by class/subject/teacher (coming soon)',
+    '✗ No automatic cloud backup (manual export included; automatic is Premium)',
   ],
   premium: [
-    'Unlimited students',
-    'Unlimited classes & subjects',
-    'Score entry for teachers',
-    'Clean PDF report cards — no watermark',
-    'Promotion engine (end-of-year promotion wizard)',
-    'Works fully offline',
-    '✓ Performance analytics — class trends, subject comparison, student progress',
-    '✓ Data backup & restore included',
+    'Up to 1,000 students',
+    'Everything in Pro, plus:',
+    '✓ Automatic cloud backup & restore',
     '✓ Multiple admin accounts',
-    '✓ Priority WhatsApp support',
+    '✓ Priority WhatsApp/phone support',
+    '⏳ Advanced school-wide analytics dashboard (coming soon)',
+    '⏳ Learning-risk identification & flagging (coming soon)',
+    '⏳ Student academic profile & trajectory (coming soon)',
+    '⏳ Advanced report-card customization — logo, colors, layout (coming soon)',
+    '⏳ Multi-role permissions & audit logs (coming soon)',
+    '✓ No Schpilot footer on reports',
   ],
 };
 
 // One-line summary of who each plan suits — used next to the plan name
 export const PLAN_SUMMARY = {
-  starter: 'Best for small schools (under 200 students) that just need reports done right — no analytics needed yet.',
-  pro:     'Best for schools that want to track performance trends over time, not just print reports.',
-  premium: 'Best for schools that want everything handled — analytics, backups, and multiple staff logins — with zero add-ons to think about.',
+  starter: 'Get your results done — everything you need to run assessment day to day, up to 200 students.',
+  pro:     'Full analytics today, with approvals, parent access, and bulk import on the way — up to 500 students.',
+  premium: 'Automatic backups, multi-admin, and priority support today, with school-wide intelligence tools on the way — up to 1,000 students.',
 };
 
-// Helper — get the price for a plan + billing cycle combination
-export function getPlanPrice(planId, cycle = 'monthly') {
+// Helper — get the price for a plan + billing cycle combination.
+// Default cycle is 'termly' — the only cycle actively sold now (see
+// BILLING_CYCLES note below). Monthly/annual remain in the data model
+// only so existing subscriptions already on those cycles keep working.
+export function getPlanPrice(planId, cycle = 'termly') {
   const plan = PLANS[planId];
   if (!plan || !plan.price) return 0;
   if (cycle === 'termly') return plan.termlyPrice || Math.round(plan.price * 2.5);

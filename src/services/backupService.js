@@ -131,7 +131,7 @@ export function downloadStudentImportTemplate() {
   // ── SHEET 1: Template (the one they fill in) ──────────────────
   const sheetData = [
     // Row 1: title row (merged visually via header style)
-    ['SchoolPilot — Student Import Template — Fill from Row 5 downwards. Do NOT rename the headers in Row 4.'],
+    ['Schpilot — Student Import Template — Fill from Row 5 downwards. Do NOT rename the headers in Row 4.'],
     // Row 2: column key
     ['🔴 Red header = Required    🟢 Green header = Optional (leave blank if not known)'],
     // Row 3: blank spacer
@@ -159,7 +159,7 @@ export function downloadStudentImportTemplate() {
 
   // ── SHEET 2: Instructions ─────────────────────────────────────
   const instrData = [
-    ['SchoolPilot Student Import — How to Use This Template'],
+    ['Schpilot Student Import — How to Use This Template'],
     [''],
     ['STEP 1 — Open the "Students" sheet (the other tab)'],
     ['• Rows 5, 6, 7 are examples — delete them or type over them.'],
@@ -181,7 +181,7 @@ export function downloadStudentImportTemplate() {
     ['• File → Save As → choose "Excel Workbook (.xlsx)"'],
     ['• Do NOT save as .csv or .xls'],
     [''],
-    ['STEP 5 — Upload in SchoolPilot'],
+    ['STEP 5 — Upload in Schpilot'],
     ['• Go to Students page → click "⬇ Get Template / ⬆ Import Excel"'],
     ['• Select your saved file'],
     ['• A preview appears — review it'],
@@ -223,7 +223,7 @@ export function downloadStudentImportTemplate() {
   XLSX.utils.book_append_sheet(wb, ws3, 'Sample — 10 Students');
 
   // ── DOWNLOAD ──────────────────────────────────────────────────
-  XLSX.writeFile(wb, 'SchoolPilot_Student_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'Schpilot_Student_Import_Template.xlsx');
 }
 
 export async function exportResultsAsExcel(schoolId, classId, academicYear, term) {

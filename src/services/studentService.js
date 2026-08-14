@@ -6,10 +6,11 @@
 // — they are always fetched from Firestore if not found locally.
 
 import { v4 as uuidv4 }                        from 'uuid';
-import { collection, getDocs, query, where }   from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, updateDoc, increment } from 'firebase/firestore';
 import { db }                                   from './firebase';
 import { idbGetAll, idbGet, idbPut, idbPutMany } from './indexedDB';
 import { writeRecord, deleteRecord } from './syncService';
+import { getSubscription, getStudentLimit, isReadOnly } from './subscriptionService';
 
 export function generateStudentCode(schoolCode, count) {
   return `${schoolCode}-${String(count + 1).padStart(4, '0')}`;
@@ -43,6 +44,29 @@ export async function getStudent(id) {
   return idbGet('students', id);
 }
 
+// ── STUDENT LIMIT CHECK ─────────────────────────────────────────────
+// Client-side pre-check: fast, friendly feedback BEFORE attempting a
+// write that Firestore rules would reject anyway. This is NOT the real
+// enforcement — see the withinStudentLimit() rule in firestore.rules for
+// that. This just avoids a confusing generic "permission denied" error
+// by explaining the actual reason (and what to do about it) up front.
+export async function checkStudentLimit(schoolId) {
+  const subscription = await getSubscription(schoolId);
+  if (isReadOnly(subscription)) {
+    return { ok: false, reason: 'Your subscription isn\'t active right now, so new students can\'t be added. Renew to continue.' };
+  }
+  const limit = getStudentLimit(subscription);
+  const current = (await getStudents(schoolId)).filter(s => s.status !== 'withdrawn').length;
+  if (current >= limit) {
+    return {
+      ok: false,
+      reason: `You've reached your plan's limit of ${limit} students. Upgrade your plan to add more.`,
+      current, limit,
+    };
+  }
+  return { ok: true, current, limit };
+}
+
 // ── CREATE / UPDATE ───────────────────────────────────────────────
 
 export async function createStudent(schoolId, data, schoolCode, existingCount) {
@@ -65,6 +89,21 @@ export async function createStudent(schoolId, data, schoolCode, existingCount) {
   };
   // writeRecord writes to IDB AND Firestore simultaneously
   await writeRecord('students', id, student, schoolId);
+
+  // Maintain the studentCount counter that firestore.rules' server-side
+  // cap checks against. Best-effort and non-blocking: the student record
+  // itself is already saved above, so a failure here must never look like
+  // the whole operation failed — worst case the counter under-counts by
+  // one until the next successful create corrects it, which only matters
+  // right at the edge of a plan's limit.
+  if (navigator.onLine) {
+    try {
+      await updateDoc(doc(db, 'schools', schoolId), { studentCount: increment(1) });
+    } catch (err) {
+      console.warn('[Student] Could not update studentCount counter:', err.message);
+    }
+  }
+
   return student;
 }
 

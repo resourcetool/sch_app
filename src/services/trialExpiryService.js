@@ -44,7 +44,7 @@ export async function sendTrialExpiryEmail(toEmail, schoolName, daysRemaining, e
   });
 
   const upgradeLink = `${SUPPORT_WHATSAPP}?text=${encodeURIComponent(
-    `Hello, I'd like to upgrade my SchoolMS subscription for ${schoolName} before my trial expires on ${expiryFormatted}.`
+    `Hello, I'd like to upgrade my Schpilot subscription for ${schoolName} before my trial expires on ${expiryFormatted}.`
   )}`;
 
   const urgencyLabel = daysRemaining <= 1
@@ -101,14 +101,14 @@ function buildExpiryMessage(schoolName, daysRemaining, expiryDate, upgradeLink) 
     '',
     urgency,
     '',
-    'To continue using SchoolMS without interruption:',
+    'To continue using Schpilot without interruption:',
     '• Contact us on WhatsApp: 0549548274',
     '• Or click this link to message us directly: ' + upgradeLink,
     '',
     'Plans start from GHS 150/month. Your data is always preserved — nothing is deleted when a trial ends.',
     '',
-    'Thank you for using SchoolMS.',
-    'The SchoolMS Team',
+    'Thank you for using Schpilot.',
+    'The Schpilot Team',
   ].join('\n');
 }
 

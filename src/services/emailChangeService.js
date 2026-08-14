@@ -69,7 +69,7 @@ export async function requestEmailChange(userId, schoolId, currentEmail, newEmai
       await sendSuperAdminEmail(
         toEmail,
         `📧 Email Change Request — ${currentEmail}`,
-        `A user has requested to change their SchoolPilot login email:\n\n` +
+        `A user has requested to change their Schpilot login email:\n\n` +
         `From: ${currentEmail}\nTo: ${newEmail.trim()}\n\n` +
         `Review it in the SuperAdmin panel → Email Requests tab.`
       );
@@ -130,10 +130,10 @@ export async function approveEmailChangeRequest(requestId, reviewerEmail) {
       await sendSuperAdminEmail(
         req.currentEmail,
         `✓ Your Email Change Was Approved`,
-        `Your request to change your SchoolPilot login email to "${req.newEmail}" has been approved.\n\n` +
-        `Log back in to SchoolPilot and go to Settings → Login & Security to send yourself a ` +
+        `Your request to change your Schpilot login email to "${req.newEmail}" has been approved.\n\n` +
+        `Log back in to Schpilot and go to Settings → Login & Security to send yourself a ` +
         `confirmation link and finish the change.`,
-        'SchoolPilot Team'
+        'Schpilot Team'
       );
     }
   } catch (err) {
@@ -156,10 +156,10 @@ export async function rejectEmailChangeRequest(requestId, reviewerEmail, reason)
       await sendSuperAdminEmail(
         req.currentEmail,
         `Your Email Change Request`,
-        `Your request to change your SchoolPilot login email to "${req.newEmail}" was not approved.\n\n` +
+        `Your request to change your Schpilot login email to "${req.newEmail}" was not approved.\n\n` +
         `${reason ? `Reason: ${reason}\n\n` : ''}` +
         `If you have questions, please reply to this email or reach us on WhatsApp at 0549548274.`,
-        'SchoolPilot Team'
+        'Schpilot Team'
       );
     }
   } catch (err) {

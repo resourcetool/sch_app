@@ -90,13 +90,19 @@ function drawOuterBorder(doc, style, pageW, pageH) {
   }
 }
 
+// Subtle branding footer, shown only when the school's plan includes a
+// watermark (Starter — see PLANS.starter.features.watermark in
+// subscriptionService.js). Replaces the old large diagonal "DRAFT" stamp
+// across the whole page — that was heavy-handed for something schools
+// hand to parents. This is a small, low-opacity line at the bottom of
+// the page instead: legible if you look, invisible if you don't.
 function drawWatermark(doc, pageW, pageH) {
   doc.saveGraphicsState();
-  doc.setGState(new doc.GState({ opacity: 0.07 }));
-  doc.setFontSize(60);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text('DRAFT', pageW / 2, pageH / 2, { align: 'center', angle: 45 });
+  doc.setGState(new doc.GState({ opacity: 0.35 }));
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(120, 120, 120);
+  doc.text('Powered by Schpilot', pageW / 2, pageH - 6, { align: 'center' });
   doc.restoreGraphicsState();
   doc.setTextColor(0, 0, 0);
 }
