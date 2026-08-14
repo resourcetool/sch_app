@@ -2158,25 +2158,6 @@ function SchoolDataBrowser({ schools }) {
     }
   }
 
-  const [fixingOrphan, setFixingOrphan] = useState(null);
-  async function handleFixOrphan(school) {
-    if (!window.confirm(
-      `Create a pending trial request for "${school.name}"?\n\n` +
-      `This school has no subscription record — this will create one using their ` +
-      `saved email/phone, and it will appear in the Requests tab for you to approve, ` +
-      `same as a normal signup. They will NOT need to sign up again.`
-    )) return;
-    setFixingOrphan(school.id);
-    try {
-      await fixOrphanedSchool(school.id);
-      await load();
-    } catch (err) {
-      alert('Fix failed: ' + err.message);
-    } finally {
-      setFixingOrphan(null);
-    }
-  }
-
   async function handleDeleteSchool(school) {
     const first = window.confirm(
       `⚠ WARNING — Delete ENTIRE school?\n\n` +
@@ -3030,6 +3011,25 @@ export default function SuperAdmin() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const [fixingOrphan, setFixingOrphan] = useState(null);
+  async function handleFixOrphan(school) {
+    if (!window.confirm(
+      `Create a pending trial request for "${school.name}"?\n\n` +
+      `This school has no subscription record — this will create one using their ` +
+      `saved email/phone, and it will appear in the Requests tab for you to approve, ` +
+      `same as a normal signup. They will NOT need to sign up again.`
+    )) return;
+    setFixingOrphan(school.id);
+    try {
+      await fixOrphanedSchool(school.id);
+      await load();
+    } catch (err) {
+      alert('Fix failed: ' + err.message);
+    } finally {
+      setFixingOrphan(null);
+    }
+  }
 
   // Revenue summary
   const totalMonthlyRevenue = schools.reduce((sum, s) => {
