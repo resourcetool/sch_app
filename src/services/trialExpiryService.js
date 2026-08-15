@@ -125,8 +125,14 @@ export async function checkAndSendTrialExpiryWarnings(schools) {
   const now    = Date.now();
   const results = { sent: [], skipped: [], failed: [] };
 
+  // BUG FIX: previously checked the stored `isTrial` boolean, which goes
+  // stale forever once a school upgrades to a paid plan (renewSubscription()
+  // didn't used to clear it — now it does, but existing records written
+  // before that fix still have isTrial:true sitting on a paid subscription).
+  // `plan === 'trial'` is the authoritative check — it's always correct,
+  // no migration needed for old records.
   const trialSchools = schools.filter(s =>
-    s.subscription?.isTrial &&
+    s.subscription?.plan === 'trial' &&
     s.subscription?.status === 'active' &&
     s.subscription?.expiresAt
   );
