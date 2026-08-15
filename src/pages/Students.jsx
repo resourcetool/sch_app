@@ -18,6 +18,7 @@ import {
   enrollStudent, getEnrollments, importStudentsFromArray, deleteStudentPermanently,
 } from '../services/studentService';
 import { importStudentsFromExcel, downloadStudentImportTemplate } from '../services/backupService';
+import { pullCollectionFromFirestore } from '../services/syncService';
 
 // ── EDIT MODAL ────────────────────────────────────────────────────
 function StudentModal({ student, existingStudents = [], onClose, onSave }) {
@@ -232,6 +233,36 @@ export default function Students() {
   }, [schoolId, school?.academicYear, school?.currentTerm]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── MANUAL REFRESH ────────────────────────────────────────────
+  // getStudents() reads from the local IDB cache and only ever falls back
+  // to Firestore if that cache is completely empty — so a normal page
+  // refresh does NOT pick up changes made elsewhere (e.g. super admin
+  // deleting a record from a different device/browser). This explicitly
+  // re-pulls from Firestore and reconciles the local cache (see
+  // pullCollectionFromFirestore() in syncService.js — it now also PRUNES
+  // locally-cached records that no longer exist on the server, not just
+  // upserts new ones), then reloads this page's state from the
+  // now-corrected cache. Previously the only way to see a change made
+  // elsewhere was a full logout/login.
+  const [refreshing, setRefreshing] = useState(false);
+  async function handleRefresh() {
+    if (!schoolId) return;
+    if (!navigator.onLine) {
+      setError('Can\'t refresh while offline — connect to the internet and try again.');
+      return;
+    }
+    setRefreshing(true);
+    setError('');
+    try {
+      await pullCollectionFromFirestore('students', schoolId);
+      await load();
+    } catch (err) {
+      setError('Refresh failed: ' + err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   // Maps for fast lookup
   const enrollMap = {};
@@ -535,8 +566,18 @@ export default function Students() {
             ({students.length}{studentLimit != null ? ` / ${studentLimit}` : ''})
           </span>
         </h1>
-        {isAdmin && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Pull the latest data from the server — picks up changes made elsewhere (e.g. by super admin) without needing to log out and back in"
+            style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+          >
+            {refreshing ? '⏳ Refreshing…' : '🔄 Refresh'}
+          </button>
+          {isAdmin && (
+          <>
             <button
               className="btn btn-ghost btn-sm"
               onClick={downloadStudentImportTemplate}
@@ -564,8 +605,9 @@ export default function Students() {
             >
               + Full Add
             </button>
-          </div>
-        )}
+          </>
+          )}
+        </div>
       </div>
 
       {atLimit && (
