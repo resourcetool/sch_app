@@ -267,6 +267,14 @@ export function getTermlySaving(planId) {
 // the moment either milestone happens, for a school still on trial.
 // Ends the trial immediately (sets status to 'trial_ended') rather than
 // waiting for the 21-day calendar bound.
+// GUARANTEE: only ever affects the FREE TRIAL. Starter, Pro, and Premium
+// (any paid plan) NEVER end early because of usage — a school can generate
+// results as many times as they want, all term long. Paid plans end on
+// ONE thing only: their actual term-end date (see getSubscriptionStatus()
+// below, which is pure date-math for any plan other than 'trial'). The
+// `sub.plan !== 'trial'` check below is what enforces that guarantee —
+// do not weaken or remove it; doing so would make a paid plan behave
+// like the trial, which is exactly the bug this comment exists to prevent.
 export async function checkAndEndTrialOnMilestone(schoolId, milestoneType) {
   const sub = await getSubscription(schoolId);
   if (!sub || sub.plan !== 'trial' || sub.status !== 'active') return; // not an active trial — nothing to do
