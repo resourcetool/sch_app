@@ -577,6 +577,17 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
   const updated = {
     plan: planId,
     status:       'active',
+    // BUG FIX: a school that started on the free trial keeps isTrial:true
+    // in Firestore forever unless something explicitly clears it — nothing
+    // did. That stale flag was being read as ground truth by the trial-
+    // expiry-warning system, which meant a school that PAID for Starter
+    // kept getting counted and emailed as if still on an active trial
+    // ("your trial is expiring, upgrade now!") — confusing and wrong.
+    // The authoritative field for "is this a trial" is always `plan`,
+    // never `isTrial` — this explicitly corrects it the moment a school
+    // converts to any paid plan, whether their trial was still active,
+    // already milestone-ended, or expired.
+    isTrial:      false,
     billingCycle: cycle,
     backupAddon:  planId === 'premium' || backupAddon,
     expiresAt,
