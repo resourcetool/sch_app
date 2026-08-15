@@ -558,7 +558,20 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
   const snap = await getDoc(doc(db, 'subscriptions', schoolId));
   if (!snap.exists()) throw new Error('School subscription not found');
 
-  const existing    = snap.data();
+  const existing = snap.data();
+
+  // GUARD: renewing INTO 'trial' via a payment is never valid — a trial
+  // is granted for free, not paid into. If this ever fires, it means the
+  // caller (normally the RenewModal) sent 'trial' as the target plan —
+  // catching it here, not just in the UI, means no future code path can
+  // accidentally create a "paid trial" subscription state again.
+  if (plan === 'trial') {
+    throw new Error(
+      'Cannot renew into the Free Trial plan — pick Starter, Pro, or Premium. ' +
+      'If this school genuinely needs a fresh trial, use "Approve Trial" from the Requests tab instead.'
+    );
+  }
+
   const planId       = PLANS[plan] ? plan : existing.plan;
   const plan_data     = PLANS[planId];
   const billingCycle = BILLING_CYCLES[cycle] || BILLING_CYCLES.termly;
@@ -595,8 +608,22 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
     paymentHistory: [
       ...(existing.paymentHistory || []),
       {
+        id:  `pmt_${now}_${Math.random().toString(36).slice(2, 8)}`,
         ref: paymentRef, amount: amountPaid, plan: planId, cycle,
         durationDays, date: now, notes,
+        recordedBy: existing._lastRenewedBy || null, // set by caller if tracked; optional
+        // Snapshot of exactly what this renewal overwrote — the ONLY thing
+        // that makes a safe, exact reversal possible later. Without this,
+        // "undo" would have to guess at what the subscription looked like
+        // before, which risks restoring the WRONG state.
+        previousState: {
+          plan:         existing.plan,
+          status:       existing.status,
+          isTrial:      existing.isTrial ?? (existing.plan === 'trial'),
+          billingCycle: existing.billingCycle || null,
+          backupAddon:  existing.backupAddon || false,
+          expiresAt:    existing.expiresAt ?? null,
+        },
       },
     ],
   };
@@ -619,6 +646,73 @@ export async function renewSubscription(schoolId, plan, paymentRef, amountPaid, 
   }
 
   return { ...existing, ...updated };
+}
+
+// ── REVERSE LAST PAYMENT ────────────────────────────────────────────
+// Undoes the MOST RECENT renewal on a school's subscription — restores
+// plan, status, expiry, billing cycle, and add-ons to exactly what they
+// were before that renewal ran (using the previousState snapshot
+// renewSubscription() now records with every payment), and removes that
+// payment from the history.
+//
+// Only reverses the LAST entry — always. Reversing anything further back
+// would require re-simulating every renewal since, which risks compounding
+// errors; if an older payment needs correcting, reverse forward from the
+// most recent one down to it, one at a time.
+//
+// Payments recorded BEFORE this feature existed have no previousState
+// snapshot and cannot be safely reversed — this throws rather than
+// guessing at what to restore.
+export async function reverseLastPayment(schoolId, reversedByEmail, reason) {
+  const snap = await getDoc(doc(db, 'subscriptions', schoolId));
+  if (!snap.exists()) throw new Error('School subscription not found');
+
+  const existing = snap.data();
+  const history = existing.paymentHistory || [];
+  if (history.length === 0) {
+    throw new Error('No payment history to reverse.');
+  }
+
+  const lastPayment = history[history.length - 1];
+  if (!lastPayment.previousState) {
+    throw new Error(
+      'This payment was recorded before reversal support existed, so there\'s no ' +
+      'record of what to restore it to. Fix this manually via a normal renewal instead.'
+    );
+  }
+
+  const restored = {
+    ...lastPayment.previousState,
+    paymentHistory: history.slice(0, -1), // drop the last entry
+    reversedAt:   Date.now(),
+    lastReversal: {
+      paymentId: lastPayment.id || null,
+      amount:    lastPayment.amount,
+      ref:       lastPayment.ref,
+      reversedBy: reversedByEmail || null,
+      reason:    reason || '',
+    },
+  };
+
+  await updateDoc(doc(db, 'subscriptions', schoolId), restored);
+
+  try {
+    const schoolName = existing.schoolName || (await getDoc(doc(db, 'schools', schoolId))).data()?.name || schoolId;
+    if (existing.adminEmail) {
+      await sendSuperAdminEmail(
+        existing.adminEmail,
+        `⚠ A Payment On Your Schpilot Account Was Reversed`,
+        `A recent payment (ref: ${lastPayment.ref}, GHS ${lastPayment.amount}) for "${schoolName}" has been ` +
+        `reversed by our team.${reason ? ` Reason: ${reason}` : ''}\\n\\n` +
+        `If you believe this is a mistake, please contact us directly.`,
+        'Schpilot Team'
+      );
+    }
+  } catch (err) {
+    console.warn('[reverseLastPayment] Notification failed silently:', err.message);
+  }
+
+  return { ...existing, ...restored };
 }
 
 export async function suspendSchool(schoolId, reason) {
