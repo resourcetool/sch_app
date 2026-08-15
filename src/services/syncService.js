@@ -189,6 +189,41 @@ export async function pullCollectionFromFirestore(collectionName, schoolId) {
     const snap    = await getDocs(q);
     const records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     if (records.length > 0) await idbPutMany(collectionName, records);
+
+    // BUG FIX: reconcile, don't just upsert. idbPutMany only ever ADDS or
+    // UPDATES local records to match what's on the server — it never
+    // REMOVES one that disappeared. That meant a record deleted directly
+    // in Firestore (e.g. by super admin, from an entirely different
+    // device/browser) would never disappear from a school's own local
+    // cache: it just sat there forever, since nothing on the school's
+    // device was ever told "this no longer exists." The admin could keep
+    // re-syncing, re-logging in, nothing would fix it — exactly what was
+    // reported as "superadmin deletes it but it doesn't take effect in
+    // the admin's page."
+    //
+    // SAFETY: never prune a record that has a write still QUEUED for it —
+    // that would be a record created/edited offline that hasn't reached
+    // Firestore yet, so it's correctly absent from `records` above for a
+    // totally different reason (not deleted, just not uploaded yet).
+    // Deleting it locally before it syncs would be real data loss.
+    const localRecords = await idbGetAll(collectionName, 'schoolId', schoolId);
+    if (localRecords.length > 0) {
+      const serverIds = new Set(records.map(r => r.id));
+      const pendingOps = await getPendingSyncOps();
+      const pendingIds = new Set(
+        pendingOps
+          .filter(op => op.collection === collectionName)
+          .map(op => op.docId)
+      );
+      const staleIds = localRecords
+        .filter(r => !serverIds.has(r.id) && !pendingIds.has(r.id))
+        .map(r => r.id);
+      if (staleIds.length > 0) {
+        await Promise.all(staleIds.map(id => idbDelete(collectionName, id)));
+        console.info(`[Sync] Pruned ${staleIds.length} locally-cached ${collectionName} record(s) no longer on the server.`);
+      }
+    }
+
     return records;
   } catch (err) {
     console.error(`[Sync] Pull failed for ${collectionName}:`, err.message);
