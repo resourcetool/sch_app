@@ -18,7 +18,7 @@ import {
   createRegistrationCode, renewSubscription, suspendSchool,
   unsuspendSchool, toggleBackupAddon, updateRequestStatus,
   addSuperAdminNote, getSchoolDetails, getSchoolAdminProfiles, deleteAccessRequest,
-  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool, fixOrphanedSchool, resetSchoolAdminLogin,
+  getSuperAdminSchoolData, superAdminDeleteDoc, superAdminDeleteSchool, fixOrphanedSchool, resetSchoolAdminLogin, reverseLastPayment,
   approveTrialRequest, rejectTrialRequest, getPendingTrials,
   sendSuperAdminEmail, broadcastEmailToAllSchools,
   getSchoolActivityLog, getPendingDeletions,
@@ -84,6 +84,64 @@ function PlanBadge({ plan }) {
     }}>
       {p.name}
     </span>
+  );
+}
+
+// ── REVERSE PAYMENT BUTTON ──────────────────────────────────────────
+// Only ever reverses the MOST RECENT payment — see reverseLastPayment()
+// in superAdminService.js for why. The confirmation shows exactly what
+// will change so this can't be clicked by accident.
+function ReversePaymentButton({ school, sub, onReversed }) {
+  const [reversing, setReversing] = useState(false);
+  const last = sub?.paymentHistory?.[sub.paymentHistory.length - 1];
+  if (!last) return null;
+
+  async function handleReverse() {
+    if (!last.previousState) {
+      alert(
+        'This payment was recorded before reversal support existed — there\'s no record ' +
+        'of what to restore it to, so it can\'t be safely undone automatically. Fix this ' +
+        'school\'s plan manually via a normal renewal instead.'
+      );
+      return;
+    }
+    const prevPlanLabel = last.previousState.plan === 'trial' ? 'Free Trial' : (PLANS[last.previousState.plan]?.name || last.previousState.plan);
+    const prevExpiryLabel = last.previousState.expiresAt
+      ? new Date(last.previousState.expiresAt).toLocaleDateString()
+      : 'no expiry set';
+
+    const reason = window.prompt(
+      `Reverse the most recent payment for "${school.name}"?\n\n` +
+      `GHS ${last.amount} (ref: ${last.ref}) will be removed from payment history.\n` +
+      `Plan will revert to: ${prevPlanLabel}\n` +
+      `Expiry will revert to: ${prevExpiryLabel}\n\n` +
+      `This does NOT refund the school's Mobile Money payment — that has to be done ` +
+      `separately if needed. This only undoes what changed in Schpilot.\n\n` +
+      `Reason for reversal (shown in the record):`
+    );
+    if (reason === null) return; // cancelled
+
+    setReversing(true);
+    try {
+      await reverseLastPayment(school.id, undefined, reason);
+      onReversed && onReversed();
+    } catch (err) {
+      alert('Reversal failed: ' + err.message);
+    } finally {
+      setReversing(false);
+    }
+  }
+
+  return (
+    <button
+      className="btn btn-ghost btn-sm"
+      style={{ color: '#c62828', fontSize: '.76rem' }}
+      disabled={reversing}
+      onClick={handleReverse}
+      title="Undo the most recent payment — reverts plan and expiry to what they were before it"
+    >
+      {reversing ? 'Reversing…' : '↩ Reverse Last Payment'}
+    </button>
   );
 }
 
@@ -208,7 +266,19 @@ function RenewModal({ school, onClose, onRenewed }) {
     : '';
 
   const [form, setForm] = useState({
-    plan:        school.subscription?.plan  || 'pro',
+    // BUG FIX: this used to default to school.subscription?.plan directly —
+    // for a school renewing OFF the free trial, that's literally 'trial',
+    // and the dropdown below has no "Trial" option to match it. The select
+    // would show blank/mismatched, and if the super admin didn't notice and
+    // explicitly re-pick a plan, the form silently submitted with
+    // plan:'trial' — renewing a PAID payment back into the free trial,
+    // with the trial's fixed 21-day duration instead of the real term date
+    // (see renewSubscription()'s planId === 'trial' branch). Default to
+    // Starter instead whenever the current plan is trial or missing —
+    // super admin can still change it, but it now starts on a real,
+    // selectable, correct option.
+    plan:        (school.subscription?.plan && school.subscription.plan !== 'trial')
+                   ? school.subscription.plan : 'starter',
     cycle:       school.subscription?.billingCycle || 'termly', // termly is the default/recommended cycle
     paymentRef:  '',
     amountPaid:  '',
@@ -714,7 +784,10 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
 
           {sub?.paymentHistory?.length > 0 && (
             <div style={{ marginTop: 20 }}>
-              <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 10 }}>Payment History</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, color: 'var(--navy)' }}>Payment History</div>
+                <ReversePaymentButton school={school} sub={sub} onReversed={onRefresh} />
+              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -722,7 +795,7 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                   </thead>
                   <tbody>
                     {sub.paymentHistory.map((p, i) => (
-                      <tr key={i}>
+                      <tr key={p.id || i} style={i === sub.paymentHistory.length - 1 ? { background: '#fff8e1' } : undefined}>
                         <td style={{ fontSize: '.78rem' }}>{new Date(p.date).toLocaleDateString()}</td>
                         <td><PlanBadge plan={p.plan} /></td>
                         <td style={{ fontWeight: 700 }}>{p.amount || '—'}</td>
@@ -733,6 +806,13 @@ function SchoolDetailModal({ school, onClose, onRefresh }) {
                   </tbody>
                 </table>
               </div>
+              {sub.lastReversal && (
+                <div style={{ fontSize: '.74rem', color: '#c62828', marginTop: 6 }}>
+                  ↩ Last reversal: GHS {sub.lastReversal.amount} (ref {sub.lastReversal.ref}) on{' '}
+                  {sub.reversedAt ? new Date(sub.reversedAt).toLocaleString() : '—'}
+                  {sub.lastReversal.reason && ` — ${sub.lastReversal.reason}`}
+                </div>
+              )}
             </div>
           )}
 
