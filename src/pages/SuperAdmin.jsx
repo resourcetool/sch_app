@@ -1372,8 +1372,11 @@ function TrialExpiryButton({ schools }) {
   const [showInfo, setShowInfo] = useState(false);
 
   async function handleSendWarnings() {
+    // Same fix as trialExpiryService.js — check `plan`, not the stale
+    // `isTrial` flag, so a paid Starter/Pro/Premium school that started
+    // on a trial is never miscounted as still being on one.
     const trialCount = schools.filter(s =>
-      s.subscription?.isTrial && s.subscription?.status === 'active'
+      s.subscription?.plan === 'trial' && s.subscription?.status === 'active'
     ).length;
 
     if (trialCount === 0) {
