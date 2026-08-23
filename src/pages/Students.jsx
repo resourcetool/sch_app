@@ -690,6 +690,7 @@ export default function Students() {
                 onKeyDown={e => e.key === 'Tab' && !qLast && e.preventDefault() && document.getElementById('qlast')?.focus()}
               />
             </div>
+            </div>
             <div style={{ flex: '1 1 120px' }}>
               <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
               <input
@@ -712,8 +713,7 @@ export default function Students() {
                 <option value="">— No class yet —</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            </div>
-            <button
+            </div>            <button
               type="submit"
               className="btn btn-success btn-sm"
               disabled={qAdding || !qFirst.trim() || !qLast.trim()}
@@ -722,6 +722,37 @@ export default function Students() {
               {qAdding ? '…' : '+ Add'}
             </button>
           </form>
+
+          {/* BUG FIX: qClass intentionally persists between quick-adds (so an
+              admin adding many students to the same class doesn't have to
+              reselect it each time) — but that persistence was completely
+              silent. An admin could select a class once, then keep adding
+              students they didn't mean to enroll, never noticing the
+              dropdown was still set from earlier. Every one of those quiet
+              auto-enrollments was a REAL enrollment record — the "students
+              enrolled" count elsewhere in the app wasn't wrong, it just
+              reflected clicks the admin didn't realize they were making.
+              This makes the sticky behavior visible and easy to undo. */}
+          {qClass && (
+            <div style={{
+              marginTop: 8, padding: '7px 12px', borderRadius: 6,
+              background: '#e8f5e9', color: '#1b5e20', fontSize: '.76rem', fontWeight: 600,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+            }}>
+              <span>📌 New students will be enrolled into <strong>{classMap[qClass]?.name || 'this class'}</strong> until you change it.</span>
+              <button
+                type="button"
+                onClick={() => setQClass('')}
+                style={{
+                  background: 'transparent', border: '1.5px solid #1b5e20', color: '#1b5e20',
+                  borderRadius: 6, padding: '2px 10px', fontSize: '.72rem', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
           {qNameMatch && (
             <div style={{
               marginTop: 8, padding: '6px 10px', borderRadius: 6,
