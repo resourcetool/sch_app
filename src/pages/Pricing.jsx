@@ -78,7 +78,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
     <div style={{
       background: '#fff',
       borderRadius: 20,
-      border: plan.highlight ? '2.5px solid #0F3460' : '1.5px solid #e8ecf0',
+      border: plan.highlight ? '2.5px solid #0B2545' : '1.5px solid #e8ecf0',
       padding: '0 0 24px',
       position: 'relative',
       boxShadow: plan.highlight
@@ -94,14 +94,14 @@ function PlanCard({ plan, cycle, isDecoy }) {
       {/* Top colour bar */}
       <div style={{
         height: 6, borderRadius: '18px 18px 0 0',
-        background: plan.highlight ? '#0F3460' : plan.id === 'premium' ? '#E94560' : '#e8ecf0',
+        background: plan.highlight ? '#0B2545' : plan.id === 'premium' ? '#E85D4C' : '#e8ecf0',
       }} />
 
       {plan.highlight && (
         <div style={{
           position: 'absolute', top: -1, left: '50%',
           transform: 'translate(-50%, -50%)',
-          background: '#0F3460', color: '#fff',
+          background: '#0B2545', color: '#fff',
           padding: '5px 20px', borderRadius: 20,
           fontSize: '.72rem', fontWeight: 800,
           letterSpacing: '.06em', whiteSpace: 'nowrap',
@@ -124,7 +124,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
 
       <div style={{ padding: '20px 20px 0' }}>
         {/* Plan name */}
-        <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#1a1a2e', marginBottom: 4 }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 600, fontSize: '1.25rem', color: '#16233D', marginBottom: 4 }}>
           {plan.name}
         </div>
         <div style={{ fontSize: '.8rem', color: '#888', marginBottom: 16, lineHeight: 1.4 }}>
@@ -137,7 +137,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
             <span style={{ fontSize: '.85rem', color: '#aaa', marginBottom: 8 }}>GHS</span>
             <span style={{
               fontSize: '3rem', fontWeight: 900, lineHeight: 1,
-              color: plan.highlight ? '#0F3460' : '#1a1a2e',
+              color: plan.highlight ? '#0B2545' : '#16233D',
             }}>
               {price.toLocaleString()}
             </span>
@@ -148,7 +148,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
           {cycle === 'termly' && saving > 0 && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
-              background: '#e8f5e9', color: '#2e7d32',
+              background: '#e8f5e9', color: '#25603F',
               fontSize: '.72rem', fontWeight: 700,
               padding: '3px 10px', borderRadius: 20, marginTop: 8,
             }}>
@@ -161,7 +161,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
             </div>
           )}
           {/* TECHNIQUE: unit-price framing — makes the lump sum feel small */}
-          <div style={{ fontSize: '.72rem', color: '#27AE60', fontWeight: 700, marginTop: 6 }}>
+          <div style={{ fontSize: '.72rem', color: '#2F7D5A', fontWeight: 700, marginTop: 6 }}>
             ≈ GHS {perDay}/day
           </div>
         </div>
@@ -173,7 +173,7 @@ function PlanCard({ plan, cycle, isDecoy }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
           {(features[plan.id] || []).map(f => (
             <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.82rem', color: '#444' }}>
-              <span style={{ color: '#27AE60', fontWeight: 800, flexShrink: 0 }}>✓</span>
+              <span style={{ color: '#2F7D5A', fontWeight: 800, flexShrink: 0 }}>✓</span>
               <span>{f}</span>
             </div>
           ))}
@@ -185,9 +185,9 @@ function PlanCard({ plan, cycle, isDecoy }) {
           target="_blank" rel="noreferrer"
           style={{
             display: 'block', textAlign: 'center',
-            background: plan.highlight ? '#0F3460' : '#fff',
-            color: plan.highlight ? '#fff' : '#0F3460',
-            border: `2px solid #0F3460`,
+            background: plan.highlight ? '#0B2545' : '#fff',
+            color: plan.highlight ? '#fff' : '#0B2545',
+            border: `2px solid #0B2545`,
             borderRadius: 10, padding: '13px',
             fontWeight: 800, fontSize: '.9rem',
             textDecoration: 'none',
@@ -232,11 +232,11 @@ export default function Pricing() {
   const backLabel = user ? '← Back to Dashboard' : '← Back';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f7f9fc', fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#f7f9fc', fontFamily: "'Inter', -apple-system, sans-serif" }}>
 
       {/* ── NAVBAR ── */}
       <div style={{
-        background: '#0F3460', padding: '0 24px', height: 60,
+        background: '#0B2545', padding: '0 24px', height: 60,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         position: 'sticky', top: 0, zIndex: 100,
         boxShadow: '0 2px 12px rgba(0,0,0,.2)',
@@ -248,7 +248,7 @@ export default function Pricing() {
         </div>
         {!user && (
           <Link to="/trial" style={{
-            background: '#E94560', color: '#fff', padding: '8px 18px',
+            background: '#E85D4C', color: '#fff', padding: '8px 18px',
             borderRadius: 8, fontWeight: 700, fontSize: '.82rem', textDecoration: 'none',
           }}>
             Start Free Trial
@@ -260,12 +260,12 @@ export default function Pricing() {
           TECHNIQUE 10: PAIN POINT MIRROR
           Lead with their exact frustration before showing solution
       ══════════════════════════════════════════════════ */}
-      <div style={{ background: '#1a1a2e', color: '#fff', padding: '56px 24px', textAlign: 'center' }}>
+      <div style={{ background: '#0B1E3D', color: '#fff', padding: '56px 24px', textAlign: 'center' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          <div style={{ fontSize: '.8rem', fontWeight: 700, color: '#E94560', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 16 }}>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '.78rem', fontWeight: 500, color: '#C9A227', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 16 }}>
             Does this sound familiar?
           </div>
-          <h1 style={{ fontSize: 'clamp(1.5rem, 4vw, 2.2rem)', fontWeight: 900, margin: '0 0 20px', lineHeight: 1.3, color: '#fff' }}>
+          <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(1.5rem, 4vw, 2.2rem)', fontWeight: 600, margin: '0 0 20px', lineHeight: 1.28, color: '#fff' }}>
             "Our teachers are here until 8pm every end of term just to finish the report cards."
           </h1>
           <p style={{ opacity: .65, fontSize: '.95rem', lineHeight: 1.8, margin: '0 0 28px' }}>
@@ -277,13 +277,13 @@ export default function Pricing() {
           <div style={{
             background: 'rgba(233,69,96,.12)', border: '1px solid rgba(233,69,96,.3)',
             borderRadius: 12, padding: '14px 20px', marginBottom: 24,
-            fontSize: '.85rem', color: '#ff8a9b', lineHeight: 1.6,
+            fontSize: '.85rem', color: '#F17B6C', lineHeight: 1.6,
           }}>
             📢 Schools using Schpilot printed their Term 3 report cards in under 2 hours on speech day —
             while other schools were still calculating grades by hand.
           </div>
 
-          <div style={{ fontSize: '.88rem', fontWeight: 700, color: '#27AE60' }}>
+          <div style={{ fontSize: '.88rem', fontWeight: 700, color: '#2F7D5A' }}>
             ↓ There is a better way — and it costs less than you think
           </div>
         </div>
@@ -292,7 +292,7 @@ export default function Pricing() {
       {/* ══════════════════════════════════════════════════
           TECHNIQUE 4: SOCIAL PROOF — animated numbers
       ══════════════════════════════════════════════════ */}
-      <div style={{ background: '#0F3460', padding: '28px 24px' }}>
+      <div style={{ background: '#0B2545', padding: '28px 24px' }}>
         <div style={{
           maxWidth: 760, margin: '0 auto',
           display: 'flex', gap: 0, flexWrap: 'wrap', justifyContent: 'center',
@@ -316,10 +316,10 @@ export default function Pricing() {
       ══════════════════════════════════════════════════ */}
       <div style={{ maxWidth: 760, margin: '48px auto 0', padding: '0 16px' }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#E94560', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#E85D4C', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
             The hidden cost of doing it manually
           </div>
-          <h2 style={{ fontSize: '1.3rem', color: '#1a1a2e', margin: 0 }}>
+          <h2 style={{ fontSize: '1.3rem', color: '#16233D', margin: 0 }}>
             What your school loses every term without Schpilot
           </h2>
         </div>
@@ -339,8 +339,8 @@ export default function Pricing() {
             }}>
               <span style={{ fontSize: '1.3rem', flexShrink: 0 }}>{item.icon}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: '.85rem', color: '#1a1a2e', marginBottom: 3 }}>{item.loss}</div>
-                <div style={{ fontSize: '.78rem', color: '#E94560', fontWeight: 600 }}>{item.cost}</div>
+                <div style={{ fontWeight: 700, fontSize: '.85rem', color: '#16233D', marginBottom: 3 }}>{item.loss}</div>
+                <div style={{ fontSize: '.78rem', color: '#E85D4C', fontWeight: 600 }}>{item.cost}</div>
               </div>
             </div>
           ))}
@@ -352,10 +352,10 @@ export default function Pricing() {
       ══════════════════════════════════════════════════ */}
       <div style={{ maxWidth: 560, margin: '48px auto 0', padding: '0 16px' }}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#0F3460', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#0B2545', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
             See it for your school
           </div>
-          <h2 style={{ fontSize: '1.2rem', color: '#1a1a2e', margin: 0 }}>
+          <h2 style={{ fontSize: '1.2rem', color: '#16233D', margin: 0 }}>
             Calculate your school's real cost
           </h2>
         </div>
@@ -376,7 +376,7 @@ export default function Pricing() {
           ].map(opt => (
             <button key={opt.id} onClick={() => setCycle(opt.id)} style={{
               padding: '10px 28px', borderRadius: 46, border: 'none',
-              background: cycle === opt.id ? '#0F3460' : 'transparent',
+              background: cycle === opt.id ? '#0B2545' : 'transparent',
               color: cycle === opt.id ? '#fff' : '#888',
               cursor: 'pointer', transition: 'all .2s',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
@@ -389,7 +389,7 @@ export default function Pricing() {
 
         {/* TECHNIQUE 5: CHARM PRICE reminder */}
         {cycle === 'termly' && (
-          <div style={{ marginTop: 12, fontSize: '.82rem', color: '#27AE60', fontWeight: 700 }}>
+          <div style={{ marginTop: 12, fontSize: '.82rem', color: '#2F7D5A', fontWeight: 700 }}>
             Pay once per academic term — no automatic renewal.
           </div>
         )}
@@ -408,7 +408,7 @@ export default function Pricing() {
         {/* Anchor message */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: '.8rem', color: '#888', marginBottom: 4 }}>
-            💡 Most schools choose <strong style={{ color: '#0F3460' }}>Pro</strong> — everything you need, nothing you don't
+            💡 Most schools choose <strong style={{ color: '#0B2545' }}>Pro</strong> — everything you need, nothing you don't
           </div>
         </div>
 
@@ -424,7 +424,7 @@ export default function Pricing() {
           {/* HERO — Pro is the money maker */}
           <div style={{ flex: '0 1 280px' }}>
             <PlanCard plan={PLANS.pro} cycle={cycle} isDecoy={false} />
-            <div style={{ textAlign: 'center', marginTop: 10, fontSize: '.78rem', color: '#27AE60', fontWeight: 700 }}>
+            <div style={{ textAlign: 'center', marginTop: 10, fontSize: '.78rem', color: '#2F7D5A', fontWeight: 700 }}>
               ✓ Chosen by most schools
             </div>
           </div>
@@ -447,7 +447,7 @@ export default function Pricing() {
               textAlign: 'center', minHeight: 320,
             }}>
               <div style={{ fontSize: '1.6rem', marginBottom: 10 }}>🏫</div>
-              <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#0F3460', marginBottom: 6 }}>
+              <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#0B2545', marginBottom: 6 }}>
                 1,000+ Students
               </div>
               <div style={{ fontSize: '.82rem', color: '#666', marginBottom: 18, lineHeight: 1.5 }}>
@@ -458,7 +458,7 @@ export default function Pricing() {
                 target="_blank" rel="noreferrer"
                 style={{
                   display: 'block', width: '100%', textAlign: 'center', padding: '13px',
-                  borderRadius: 12, border: '2px solid #0F3460', color: '#0F3460',
+                  borderRadius: 12, border: '2px solid #0B2545', color: '#0B2545',
                   fontWeight: 800, fontSize: '.9rem', textDecoration: 'none',
                 }}
               >
@@ -483,7 +483,7 @@ export default function Pricing() {
         }}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <div style={{ fontSize: '1.3rem', marginBottom: 6 }}>🎁</div>
-            <div style={{ fontWeight: 900, fontSize: '1rem', color: '#2e7d32' }}>
+            <div style={{ fontWeight: 900, fontSize: '1rem', color: '#25603F' }}>
               Everything below is FREE — on every plan, including the trial
             </div>
             <div style={{ fontSize: '.8rem', color: '#388e3c', marginTop: 4 }}>
@@ -504,7 +504,7 @@ export default function Pricing() {
               <div key={text} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 background: '#fff', borderRadius: 30,
-                padding: '8px 14px', fontSize: '.8rem', color: '#2e7d32', fontWeight: 600,
+                padding: '8px 14px', fontSize: '.8rem', color: '#25603F', fontWeight: 600,
                 border: '1px solid #c8e6c9',
               }}>
                 <span>{icon}</span><span>{text}</span>
@@ -520,7 +520,7 @@ export default function Pricing() {
       ══════════════════════════════════════════════════ */}
       <div style={{ maxWidth: 760, margin: '48px auto 0', padding: '0 16px' }}>
         <div style={{
-          background: 'linear-gradient(135deg, #0F3460, #1a4a7a)',
+          background: 'linear-gradient(135deg, #0B2545, #1a4a7a)',
           borderRadius: 20, padding: '40px 28px', textAlign: 'center', color: '#fff',
         }}>
           <div style={{ fontSize: '2rem', marginBottom: 12 }}>🏫</div>
@@ -537,7 +537,7 @@ export default function Pricing() {
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link to="/trial" style={{
-              background: '#E94560', color: '#fff', padding: '14px 36px',
+              background: '#E85D4C', color: '#fff', padding: '14px 36px',
               borderRadius: 10, fontWeight: 800, fontSize: '.95rem', textDecoration: 'none',
               boxShadow: '0 4px 20px rgba(233,69,96,.4)',
             }}>
@@ -567,7 +567,7 @@ export default function Pricing() {
           OBJECTION KILLERS — addressed in plain language
       ══════════════════════════════════════════════════ */}
       <div style={{ maxWidth: 760, margin: '48px auto 0', padding: '0 16px' }}>
-        <h2 style={{ textAlign: 'center', fontSize: '1.2rem', color: '#1a1a2e', marginBottom: 24 }}>
+        <h2 style={{ textAlign: 'center', fontSize: '1.2rem', color: '#16233D', marginBottom: 24 }}>
           Every concern — answered honestly
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -603,11 +603,11 @@ export default function Pricing() {
             }}>
               <summary style={{
                 padding: '16px 20px', fontWeight: 700, fontSize: '.88rem',
-                color: '#1a1a2e', cursor: 'pointer', listStyle: 'none',
+                color: '#16233D', cursor: 'pointer', listStyle: 'none',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}>
                 <span>{item.q}</span>
-                <span style={{ color: '#0F3460', fontSize: '1.2rem', flexShrink: 0, marginLeft: 12 }}>+</span>
+                <span style={{ color: '#0B2545', fontSize: '1.2rem', flexShrink: 0, marginLeft: 12 }}>+</span>
               </summary>
               <div style={{
                 padding: '14px 20px 18px', fontSize: '.85rem',
