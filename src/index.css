@@ -2,23 +2,39 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --navy:      #0f3460;
-  --navy-mid:  #16213e;
-  --navy-lt:   #1e3a5f;
-  --accent:    #e94560;
-  --accent-lt: #ff6b84;
-  --gold:      #f59e0b;
-  --bg:        #f1f5f9;
+  /* ── PALETTE — aligned with the public Home page's navy/brass/coral
+     identity, so the marketing site and the working app feel like the
+     same product instead of two different tools bolted together.
+     Every page reads these variables — retuning them here updates the
+     whole app consistently, nothing structural changes. ── */
+  --navy:      #0B2545;   /* primary navy — deeper, ties to Home's #0B1E3D */
+  --navy-mid:  #0B1E3D;   /* sidebar bg — exact match to the Home hero */
+  --navy-lt:   #16325C;
+  --accent:    #E85D4C;   /* warm coral — primary CTA color. Previously too
+                              close in hue to --danger (both read as "red"),
+                              which made an active nav link and an error
+                              state look like the same signal. Coral leans
+                              warmer/more orange, reads as energetic and
+                              inviting without being mistaken for an error. */
+  --accent-lt: #F17B6C;
+  --gold:      #C9A227;   /* brass — the Home page's "seal" color. Used for
+                              highlights, badges, and anything that should
+                              feel like an achievement (top of class, a
+                              milestone), not just decoration. */
+  --bg:        #F4F6F9;   /* cool paper — matches Home exactly */
   --surface:   #ffffff;
-  --surface2:  #f8fafc;
-  --border:    #e2e8f0;
-  --border-focus: #0f3460;
-  --text:      #1e293b;
-  --text-mid:  #64748b;
-  --text-lt:   #94a3b8;
-  --success:   #16a34a;
-  --warning:   #d97706;
-  --danger:    #dc2626;
+  --surface2:  #F7F9FB;
+  --border:    #DCE3EC;
+  --border-focus: #0B2545;
+  --text:      #16233D;
+  --text-mid:  #5B6B85;
+  --text-lt:   #93A1B8;
+  --success:   #2F7D5A;   /* muted forest green — matches Home, reads as
+                              confident/earned rather than a bright neon
+                              "success!" green */
+  --warning:   #D97706;
+  --danger:    #B23A48;   /* a refined brick-red, clearly distinct from the
+                              coral accent, still unambiguously "danger" */
   --info:      #2563eb;
 
   --radius:    8px;
