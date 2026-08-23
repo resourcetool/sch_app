@@ -40,6 +40,8 @@ import SubscriptionExpired                          from './pages/SubscriptionEx
 import Training                                     from './pages/Training';
 import Pricing                                      from './pages/Pricing';
 import AssessmentDeadlines                          from './pages/AssessmentDeadlines';
+import Approvals                                    from './pages/Approvals';
+import Home                                          from './pages/Home';
 
 function SubscriptionGuard({ children }) {
   const { status, loading } = useSubscription();
@@ -76,6 +78,7 @@ function AppRoutes() {
   if (!user) {
     return (
       <Routes>
+        <Route path="/"                element={<Home />} />
         <Route path="/login"          element={<Login />} />
         <Route path="/training"       element={<Training />} />
         <Route path="/pricing"        element={<Pricing />} />
@@ -87,7 +90,7 @@ function AppRoutes() {
         <Route path="/legal/subscription" element={<SubscriptionPolicy />} />
         <Route path="/legal/data-retention" element={<DataRetention />} />
         <Route path="/legal/data-security"  element={<DataSecurity />} />
-        <Route path="*"               element={<Navigate to="/login" replace />} />
+        <Route path="*"               element={<Navigate to="/" replace />} />
       </Routes>
     );
   }
@@ -145,6 +148,7 @@ function AppRoutes() {
         <Route path="/backup"       element={<AdminOnly><Backup /></AdminOnly>} />
         <Route path="/settings"     element={<AdminOnly><Settings /></AdminOnly>} />
         <Route path="/assessments"  element={<AdminOnly><AssessmentDeadlines /></AdminOnly>} />
+        <Route path="/approvals"    element={<AdminOnly><Approvals /></AdminOnly>} />
         <Route path="/support"      element={<Support />} />
         <Route path="/legal/privacy"      element={<PrivacyPolicy />} />
         <Route path="/legal/terms"        element={<TermsOfService />} />
