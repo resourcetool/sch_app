@@ -690,7 +690,7 @@ export default function Students() {
                 onKeyDown={e => e.key === 'Tab' && !qLast && e.preventDefault() && document.getElementById('qlast')?.focus()}
               />
             </div>
-            </div>
+            
             <div style={{ flex: '1 1 120px' }}>
               <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
               <input
