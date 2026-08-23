@@ -46,32 +46,12 @@ import { Link } from 'react-router-dom';
 import { PLANS, getPlanPrice, getTermlySaving } from '../services/subscriptionService';
 import { useAuth } from '../contexts/AuthContext';
 import MoMoPayButton from '../components/common/MoMoPayButton';
-import { ROICalculator } from '../components/common/PricingCalculator';
+import { ROICalculator, CountUp, SITE_STATS } from '../components/common/PricingCalculator';
 
 const WHATSAPP_BASE = 'https://wa.me/233549548274';
 const wa = (msg) => `${WHATSAPP_BASE}?text=${encodeURIComponent(msg)}`;
 
 // ── ANIMATED COUNTER ─────────────────────────────────────────────
-function CountUp({ target, suffix = '', prefix = '' }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef();
-  useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      observer.disconnect();
-      let start = 0;
-      const step = target / 40;
-      const timer = setInterval(() => {
-        start += step;
-        if (start >= target) { setCount(target); clearInterval(timer); }
-        else setCount(Math.floor(start));
-      }, 30);
-    });
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [target]);
-  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
-}
 
 // ── PLAN CARD ─────────────────────────────────────────────────────
 function PlanCard({ plan, cycle, isDecoy }) {
@@ -317,12 +297,7 @@ export default function Pricing() {
           maxWidth: 760, margin: '0 auto',
           display: 'flex', gap: 0, flexWrap: 'wrap', justifyContent: 'center',
         }}>
-          {[
-            { target: 47,   suffix: '+',  label: 'Schools in Ghana'            },
-            { target: 8400, suffix: '+',  label: 'Students managed'            },
-            { target: 3,    suffix: 'hrs', label: 'Saved per teacher per term' },
-            { target: 21,   suffix: ' days', label: 'Free trial — no card'    },
-          ].map(({ target, suffix, label }, i) => (
+          {SITE_STATS.map(({ target, suffix, label }, i) => (
             <div key={label} style={{
               flex: '1 1 140px', textAlign: 'center', padding: '16px 12px',
               borderRight: i < 3 ? '1px solid rgba(255,255,255,.1)' : 'none',
