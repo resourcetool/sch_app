@@ -32,7 +32,7 @@ const TOUR_STEPS = [
   {
     icon: '👥',
     title: 'Student Records',
-    color: '#0F3460',
+    color: '#0B2545',
     desc: 'Add and manage all your students in one place. Import hundreds from Excel in seconds.',
     points: [
       'Add students with name, class, guardian contacts',
@@ -58,7 +58,7 @@ const TOUR_STEPS = [
   {
     icon: '📄',
     title: 'Report Cards',
-    color: '#27AE60',
+    color: '#2F7D5A',
     desc: 'Generate professional PDF report cards for every student in one click.',
     points: [
       'Print individual or whole-class report cards',
@@ -97,7 +97,7 @@ const TOUR_STEPS = [
   {
     icon: '📊',
     title: 'Analytics',
-    color: '#E94560',
+    color: '#E85D4C',
     desc: 'See how your school is performing with visual charts — no spreadsheets needed.',
     points: [
       'Grade distribution chart per class per term',
@@ -189,7 +189,7 @@ function DemoModal({ onClose }) {
             to="/trial"
             onClick={onClose}
             style={{
-              background: '#E94560', color: '#fff', padding: '10px 24px',
+              background: '#E85D4C', color: '#fff', padding: '10px 24px',
               borderRadius: 8, fontWeight: 700, fontSize: '.9rem',
               textDecoration: 'none', display: 'inline-block',
             }}
@@ -459,7 +459,7 @@ export default function Login() {
               to="/training"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
-                background: '#E94560', borderRadius: 10,
+                background: '#E85D4C', borderRadius: 10,
                 padding: '12px 22px', color: '#fff',
                 fontWeight: 700, fontSize: '.88rem', textDecoration: 'none',
                 boxShadow: '0 4px 16px rgba(233,69,96,.4)',
@@ -504,7 +504,7 @@ export default function Login() {
               <div key={n} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 8, fontSize: '.82rem' }}>
                 <span style={{
                   width: 20, height: 20, borderRadius: '50%',
-                  background: '#E94560', color: '#fff',
+                  background: '#E85D4C', color: '#fff',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontWeight: 800, fontSize: '.72rem', flexShrink: 0, marginTop: 1,
                 }}>
@@ -709,7 +709,7 @@ export default function Login() {
               {/* ── QUICK DEMO LINK (mobile-friendly) ── */}
               <div style={{
                 marginTop: 20, padding: '14px 16px',
-                background: 'linear-gradient(135deg, #0F3460, #1a4a7a)',
+                background: 'linear-gradient(135deg, #0B2545, #1a4a7a)',
                 borderRadius: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 gap: 12, flexWrap: 'wrap',
@@ -722,7 +722,7 @@ export default function Login() {
                   <Link
                     to="/training"
                     style={{
-                      background: '#E94560', color: '#fff',
+                      background: '#E85D4C', color: '#fff',
                       borderRadius: 8, padding: '8px 16px',
                       fontWeight: 700, fontSize: '.78rem',
                       textDecoration: 'none', display: 'inline-block',
@@ -738,7 +738,7 @@ export default function Login() {
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'center' }}>
                 <div style={{ fontSize: '.82rem', color: 'var(--navy)', fontWeight: 700 }}>
                   New school?{' '}
-                  <Link to="/trial" style={{ color: '#E94560' }}>Start your free 21-day trial →</Link>
+                  <Link to="/trial" style={{ color: '#E85D4C' }}>Start your free 21-day trial →</Link>
                 </div>
                 <div style={{ fontSize: '.8rem', color: 'var(--text-lt)' }}>
                   Have an access code?{' '}
