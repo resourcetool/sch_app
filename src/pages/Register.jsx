@@ -119,7 +119,7 @@ export default function Register() {
             <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, opacity: step >= n ? 1 : .4 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50%',
-                background: step >= n ? '#e94560' : 'rgba(255,255,255,.2)',
+                background: step >= n ? '#E85D4C' : 'rgba(255,255,255,.2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontWeight: 800, fontSize: '.8rem', color: '#fff', flexShrink: 0,
               }}>{n}</div>
@@ -141,7 +141,7 @@ export default function Register() {
 
         <div style={{ marginTop: 16, background: 'rgba(255,255,255,.07)', borderRadius: 12, padding: '12px 18px', fontSize: '.82rem', color: 'rgba(255,255,255,.7)' }}>
           No access code yet?<br />
-          <a href="/request-access" style={{ color: '#e94560', fontWeight: 700 }}>Request access here →</a>
+          <a href="/request-access" style={{ color: '#E85D4C', fontWeight: 700 }}>Request access here →</a>
         </div>
       </div>
 
@@ -161,13 +161,13 @@ export default function Register() {
               alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
             }}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: '.85rem', color: '#0d47a1' }}>🎁 New school? Try it free first</div>
-                <div style={{ fontSize: '.78rem', color: '#1565c0' }}>No code, no card needed — just sign up and start using it.</div>
+                <div style={{ fontWeight: 700, fontSize: '.85rem', color: '#0B2545' }}>🎁 New school? Try it free first</div>
+                <div style={{ fontSize: '.78rem', color: '#16325C' }}>No code, no card needed — just sign up and start using it.</div>
               </div>
               <Link
                 to="/trial"
                 style={{
-                  background: '#0d47a1', color: '#fff', padding: '8px 16px', borderRadius: 8,
+                  background: '#0B2545', color: '#fff', padding: '8px 16px', borderRadius: 8,
                   fontWeight: 700, fontSize: '.82rem', textDecoration: 'none', whiteSpace: 'nowrap',
                 }}
               >
