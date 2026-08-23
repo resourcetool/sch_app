@@ -8,8 +8,42 @@
 // from getPlanPrice() instead means every consumer updates automatically the
 // moment the real config changes.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PLANS, BILLING_CYCLES, getPlanPrice, getTermlySaving } from '../../services/subscriptionService';
+
+// ── ANIMATED COUNTER ─────────────────────────────────────────────
+// Shared between Pricing.jsx and Home.jsx (and anywhere else that wants
+// the same "counts up once visible" stat treatment) so the numbers and
+// animation behavior can never drift apart between pages.
+export function CountUp({ target, suffix = '', prefix = '' }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef();
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      let start = 0;
+      const step = target / 40;
+      const timer = setInterval(() => {
+        start += step;
+        if (start >= target) { setCount(target); clearInterval(timer); }
+        else setCount(Math.floor(start));
+      }, 30);
+    });
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [target]);
+  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
+}
+
+// Single source of truth for the stats shown across the site (Pricing,
+// Home) — change them here once, both pages update together.
+export const SITE_STATS = [
+  { target: 47,   suffix: '+',    label: 'Schools in Ghana'            },
+  { target: 8400, suffix: '+',    label: 'Students managed'            },
+  { target: 3,    suffix: 'hrs',  label: 'Saved per teacher per term'  },
+  { target: 21,   suffix: ' days', label: 'Free trial — no card'       },
+];
 
 // ── BILLING CYCLE TOGGLE (radio-button style) ───────────────────────
 // Renders one button per entry in BILLING_CYCLES — currently Monthly,
