@@ -700,7 +700,6 @@ export default function Students() {
                 onKeyDown={e => e.key === 'Tab' && !qLast && e.preventDefault() && document.getElementById('qlast')?.focus()}
               />
             </div>
-            </div>
             <div style={{ flex: '1 1 120px' }}>
               <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
               <input
@@ -723,7 +722,8 @@ export default function Students() {
                 <option value="">— No class yet —</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            </div>            <button
+            </div>
+            <button
               type="submit"
               className="btn btn-success btn-sm"
               disabled={qAdding || !qFirst.trim() || !qLast.trim()}
