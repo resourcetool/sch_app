@@ -41,6 +41,7 @@ import Training                                     from './pages/Training';
 import Pricing                                      from './pages/Pricing';
 import AssessmentDeadlines                          from './pages/AssessmentDeadlines';
 import Approvals                                    from './pages/Approvals';
+import EnrollmentReview                              from './pages/EnrollmentReview';
 import Home                                          from './pages/Home';
 
 function SubscriptionGuard({ children }) {
@@ -149,6 +150,7 @@ function AppRoutes() {
         <Route path="/settings"     element={<AdminOnly><Settings /></AdminOnly>} />
         <Route path="/assessments"  element={<AdminOnly><AssessmentDeadlines /></AdminOnly>} />
         <Route path="/approvals"    element={<AdminOnly><Approvals /></AdminOnly>} />
+        <Route path="/enrollments/review" element={<AdminOnly><EnrollmentReview /></AdminOnly>} />
         <Route path="/support"      element={<Support />} />
         <Route path="/legal/privacy"      element={<PrivacyPolicy />} />
         <Route path="/legal/terms"        element={<TermsOfService />} />
