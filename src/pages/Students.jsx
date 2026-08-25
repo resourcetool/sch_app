@@ -577,6 +577,16 @@ export default function Students() {
             {refreshing ? '⏳ Refreshing…' : '🔄 Refresh'}
           </button>
           {isAdmin && (
+            <Link
+              to="/enrollments/review"
+              className="btn btn-ghost btn-sm"
+              title="Review who's currently enrolled and withdraw anyone enrolled by mistake — e.g. from the class dropdown staying selected between quick-adds"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}
+            >
+              📋 Review Enrollments
+            </Link>
+          )}
+          {isAdmin && (
           <>
             <button
               className="btn btn-ghost btn-sm"
@@ -690,7 +700,7 @@ export default function Students() {
                 onKeyDown={e => e.key === 'Tab' && !qLast && e.preventDefault() && document.getElementById('qlast')?.focus()}
               />
             </div>
-            
+            </div>
             <div style={{ flex: '1 1 120px' }}>
               <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Last Name *</div>
               <input
