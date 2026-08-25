@@ -13,12 +13,20 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSchool } from '../contexts/SchoolContext';
-import { getEnrollments, updateEnrollmentStatus } from '../services/studentService';
+import { getEnrollments, updateEnrollmentStatus, getStudents } from '../services/studentService';
 
 export default function EnrollmentReview() {
-  const { school, classes, students, schoolId } = useSchool();
+  // BUG FIX: SchoolContext does NOT provide `students` — that list is
+  // loaded locally inside Students.jsx itself, not shared via context.
+  // Destructuring it here silently returned undefined, and
+  // `students.map(...)` below threw immediately on render — with no
+  // error boundary catching it, that crashed the whole page to blank
+  // white. Fetching students directly here instead, the same way
+  // Students.jsx does.
+  const { school, classes, schoolId } = useSchool();
+  const [students, setStudents] = useState([]);
   const [academicYear, setAcademicYear] = useState(school?.academicYear || '');
-  const [term, setTerm]                 = useState(school?.currentTerm  || '1');
+  const [term, setTerm] = useState(school?.currentTerm || '');
   const [enrollments, setEnrollments]   = useState([]);
   const [loading, setLoading]           = useState(true);
   const [selected, setSelected]         = useState(new Set());
@@ -27,6 +35,28 @@ export default function EnrollmentReview() {
 
   const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
   const classMap   = Object.fromEntries(classes.map(c => [c.id, c]));
+
+  // BUG FIX: `school` loads asynchronously from context — on first render
+  // it's often still null, so the useState() initial values above end up
+  // as ''. useState's initial argument only applies once, at mount; it
+  // does NOT re-run when `school` populates a moment later. Without this
+  // effect, academicYear/term could stay blank forever and load() below
+  // would keep silently no-op'ing (its guard requires both to be set),
+  // leaving the page stuck on "Loading…" even after the school data
+  // arrived. Only fills them in the first time, so it never overwrites
+  // a value the admin has since changed themselves.
+  const [synced, setSynced] = useState(false);
+  useEffect(() => {
+    if (synced || !school) return;
+    if (school.academicYear) setAcademicYear(prev => prev || school.academicYear);
+    if (school.currentTerm)  setTerm(prev => prev || school.currentTerm);
+    setSynced(true);
+  }, [school, synced]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    getStudents(schoolId).then(setStudents);
+  }, [schoolId]);
 
   const load = useCallback(async () => {
     if (!schoolId || !academicYear || !term) return;
@@ -105,7 +135,7 @@ export default function EnrollmentReview() {
         </div>
         <div>
           <div style={{ fontSize: '.72rem', color: 'var(--text-lt)', marginBottom: 3 }}>Term</div>
-          <select value={term} onChange={e => setTerm(e.target.value)}>
+          <select value={term || '1'} onChange={e => setTerm(e.target.value)}>
             <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
           </select>
         </div>
